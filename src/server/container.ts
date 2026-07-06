@@ -1,0 +1,47 @@
+import { getDb } from "@/db/client";
+import { getEnv } from "@/lib/env";
+import { FileRepository } from "./files/file.repository";
+import { FileService } from "./files/file.service";
+import { FinalizeService } from "./files/finalize.service";
+import { FileStorage } from "./files/storage";
+import { FfmpegProber } from "./media/prober";
+import { QuotaService } from "./quota/quota.service";
+import { SettingsRepository } from "./users/settings.repository";
+
+/**
+ * Composition root: services wired with real adapters and validated env.
+ * Tests never import this — they construct services with fakes directly.
+ */
+export interface Container {
+  fileRepo: FileRepository;
+  settingsRepo: SettingsRepository;
+  storage: FileStorage;
+  quota: QuotaService;
+  finalize: FinalizeService;
+  files: FileService;
+}
+
+let cached: Container | undefined;
+
+export function getContainer(): Container {
+  if (cached) return cached;
+  const env = getEnv();
+  const db = getDb();
+  const fileRepo = new FileRepository(db);
+  const settingsRepo = new SettingsRepository(db);
+  const storage = new FileStorage(env.STORAGE_DIR);
+  cached = {
+    fileRepo,
+    settingsRepo,
+    storage,
+    quota: new QuotaService(fileRepo, {
+      storageLimit: env.STORAGE_LIMIT,
+      maxFileSize: env.MAX_FILE_SIZE,
+    }),
+    finalize: new FinalizeService(fileRepo, storage, new FfmpegProber(), {
+      defaultExpiryMs: env.DEFAULT_FILE_EXPIRY,
+    }),
+    files: new FileService(fileRepo, storage),
+  };
+  return cached;
+}

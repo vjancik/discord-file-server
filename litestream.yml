@@ -1,0 +1,8 @@
+# Continuous SQLite replication (PRD §7). Default replica target is a local
+# path (mount another disk or network share at /replica); swap for an S3-style
+# target if one ever exists.
+dbs:
+  - path: /srv/db/app.sqlite
+    replicas:
+      - type: file
+        path: /replica/app-db
