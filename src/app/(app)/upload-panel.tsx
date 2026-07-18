@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { CopyButton } from "@/components/copy-button";
 import { isBlockedExtension } from "@/lib/blocked-extensions";
+import { formatSpeed, SpeedEstimator } from "@/lib/upload-speed";
 
 // Order matters: the theme overrides must load after Uppy's own styles.
 import "@uppy/core/css/style.min.css";
@@ -44,6 +45,13 @@ function showWaitToast() {
     { id: WAIT_TOAST_ID, duration: Number.POSITIVE_INFINITY },
   );
 }
+
+// Uppy's status bar shows only "% · bytes of total · time left" — it computes
+// a speed internally for the ETA but never displays it. The ETA text comes
+// from the `xTimeLeft` locale string, so we prepend a live speed readout to it
+// via the Dashboard's public setOptions API.
+const DEFAULT_X_TIME_LEFT = "%{time} left";
+const SPEED_REFRESH_MS = 500;
 
 function createUppy() {
   return new Uppy({
@@ -139,6 +147,49 @@ export function UploadPanel({ remainingBytes }: { remainingBytes: number }) {
       uppy.off("upload-success", onSuccess);
       uppy.off("upload-error", onError);
       uppy.off("file-removed", onRemoved);
+    };
+  }, [uppy]);
+
+  useEffect(() => {
+    const estimator = new SpeedEstimator();
+    let lastRefresh = 0;
+
+    const setTimeLeftString = (xTimeLeft: string) => {
+      uppy
+        .getPlugin("Dashboard")
+        ?.setOptions({ locale: { strings: { xTimeLeft } } });
+    };
+
+    const onProgress = () => {
+      const totalUploaded = uppy
+        .getFiles()
+        .reduce((sum, file) => sum + (file.progress.bytesUploaded || 0), 0);
+      const speed = estimator.sample(totalUploaded, Date.now());
+      const now = Date.now();
+      if (speed === null || speed <= 0 || now - lastRefresh < SPEED_REFRESH_MS)
+        return;
+      lastRefresh = now;
+      setTimeLeftString(`${formatSpeed(speed)} · ${DEFAULT_X_TIME_LEFT}`);
+    };
+    // While paused no progress arrives, so a stale speed would sit in the
+    // status bar; drop back to the plain ETA string and start a fresh average
+    // on resume (the pause gap would otherwise read as a huge slowdown).
+    const onIdle = () => {
+      estimator.reset();
+      setTimeLeftString(DEFAULT_X_TIME_LEFT);
+    };
+
+    uppy.on("upload-progress", onProgress);
+    uppy.on("pause-all", onIdle);
+    uppy.on("cancel-all", onIdle);
+    uppy.on("complete", onIdle);
+    uppy.on("error", onIdle);
+    return () => {
+      uppy.off("upload-progress", onProgress);
+      uppy.off("pause-all", onIdle);
+      uppy.off("cancel-all", onIdle);
+      uppy.off("complete", onIdle);
+      uppy.off("error", onIdle);
     };
   }, [uppy]);
 
