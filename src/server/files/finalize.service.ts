@@ -49,7 +49,8 @@ export class FinalizeService {
       kind === "other" ? {} : await this.prober.probe(input.stagingPath);
 
     // Thumbnail is rendered from the staging copy (SSD) into the storage dir,
-    // then the file itself is moved (rename, or copy+unlink across devices).
+    // then the file itself is moved (rename, or an atomic temp-name copy
+    // across devices — see FileStorage.copyIntoStorage).
     let thumbnailPath: string | null = null;
 
     try {

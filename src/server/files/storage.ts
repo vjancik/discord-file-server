@@ -23,7 +23,7 @@ export class FileStorage {
   /**
    * Move a finished upload from SSD staging into storage. Staging and storage
    * are different filesystems, so a plain rename fails with EXDEV — fall back
-   * to a streamed copy + unlink (never buffers the whole file).
+   * to `copyIntoStorage`.
    */
   async moveIntoStorage(
     sourcePath: string,
@@ -36,9 +36,28 @@ export class FileStorage {
       await rename(sourcePath, dest);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "EXDEV") throw err;
-      await Bun.write(dest, Bun.file(sourcePath));
-      await unlink(sourcePath);
+      await this.copyIntoStorage(sourcePath, fileId, fileName);
     }
+    return dest;
+  }
+
+  /**
+   * Cross-device fallback for `moveIntoStorage`: streamed copy (never buffers
+   * the whole file) to a temp name in the destination dir, then an atomic
+   * same-device rename onto the final path, then unlink the source. Caddy
+   * serves /f/* straight from disk with no DB check, so bytes must never be
+   * readable at the servable path until they are complete.
+   */
+  async copyIntoStorage(
+    sourcePath: string,
+    fileId: string,
+    fileName: string,
+  ): Promise<string> {
+    const dest = this.pathFor(fileId, fileName);
+    const temp = path.join(this.dirFor(fileId), ".incoming");
+    await Bun.write(temp, Bun.file(sourcePath));
+    await rename(temp, dest);
+    await unlink(sourcePath);
     return dest;
   }
 

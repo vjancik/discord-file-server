@@ -7,8 +7,17 @@ import { createLogger } from "@/lib/logger";
 import { getContainer } from "@/server/container";
 import { UploadRejectedError } from "@/server/files/finalize.service";
 import { classifyUpload } from "@/server/files/type-policy";
+import { SingleFlight } from "./single-flight";
 
 const log = createLogger("tus");
+
+/**
+ * How long a successful finalize response is kept for retries. A client whose
+ * final PATCH response was lost (network blip, proxy timeout on a slow
+ * finalize) retries within its backoff window; a retained response hands it
+ * the same links instead of failing on the already-consumed staging file.
+ */
+const FINALIZE_RETAIN_MS = 5 * 60 * 1000;
 
 type TusError = { status_code: number; body: string };
 const reject = (status_code: number, body: string): TusError => ({
@@ -30,10 +39,21 @@ async function requireSessionUser(req: Request) {
  */
 function createTusServer(): Server {
   const env = getEnv();
+  type FinalizeResponse = {
+    status_code: number;
+    headers: Record<string, string>;
+    body: string;
+  };
+  const finalizeOnce = new SingleFlight<FinalizeResponse>(FINALIZE_RETAIN_MS);
 
   return new Server({
     path: "/api/upload",
     datastore: new FileStore({ directory: env.STAGING_DIR }),
+    // The staging file must not be deleted out from under a running finalize:
+    // the per-upload lock is released before onUploadFinish runs, so a cancel
+    // (DELETE) could otherwise race it. Once all bytes are in, termination is
+    // refused instead.
+    disableTerminationForFinishedUploads: true,
     // Mint upload URLs from the configured public origin, never from request
     // headers: TLS terminates upstream (Caddy, or Cloudflare's edge when
     // tunneled), so requests reach the app as plain http and a header-derived
@@ -103,41 +123,49 @@ function createTusServer(): Server {
 
     async onUploadFinish(req, upload: Upload) {
       const user = await requireSessionUser(req);
-      const { finalize } = getContainer();
-      const stagingPath = (upload.storage as { path: string }).path;
 
-      try {
-        const row = await finalize.finalize({
-          stagingPath,
-          ownerId: user.id,
-          rawFileName: upload.metadata?.filename ?? "file",
-          clientMime: upload.metadata?.filetype ?? undefined,
-          sizeBytes: upload.size ?? 0,
-        });
-        const { baseUrl } = getEnv();
-        return {
-          status_code: 200,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fileId: row.id,
-            fileName: row.fileName,
-            kind: row.kind,
-            shortUrl: `${baseUrl}/s/${row.shortCode}`,
-            canonicalUrl: `${baseUrl}/f/${row.id}/${encodeURIComponent(row.fileName)}`,
-          }),
-        };
-      } catch (err) {
-        if (err instanceof UploadRejectedError) throw reject(422, err.message);
-        log.error({ err }, "finalize failed");
-        throw reject(500, "Upload processing failed.");
-      } finally {
-        // The data file was moved (or rolled back); drop FileStore's .info sidecar.
-        await unlink(`${stagingPath}.json`).catch(() => {});
-        // Release even on failure: a failed finalize leaves at most an
-        // orphaned data file, which the scan counts by its disk size and
-        // GC/pressure eviction removes.
-        getContainer().stagingLedger.release(upload.id);
-      }
+      // The tus lock is released before this hook runs, so a retried final
+      // PATCH can arrive while finalize is still in flight — single-flight
+      // per upload id makes it await (or reuse) the original finalize
+      // instead of racing it against the same staging file.
+      return finalizeOnce.run(upload.id, async () => {
+        const { finalize } = getContainer();
+        const stagingPath = (upload.storage as { path: string }).path;
+
+        try {
+          const row = await finalize.finalize({
+            stagingPath,
+            ownerId: user.id,
+            rawFileName: upload.metadata?.filename ?? "file",
+            clientMime: upload.metadata?.filetype ?? undefined,
+            sizeBytes: upload.size ?? 0,
+          });
+          const { baseUrl } = getEnv();
+          return {
+            status_code: 200,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fileId: row.id,
+              fileName: row.fileName,
+              kind: row.kind,
+              shortUrl: `${baseUrl}/s/${row.shortCode}`,
+              canonicalUrl: `${baseUrl}/f/${row.id}/${encodeURIComponent(row.fileName)}`,
+            }),
+          };
+        } catch (err) {
+          if (err instanceof UploadRejectedError)
+            throw reject(422, err.message);
+          log.error({ err }, "finalize failed");
+          throw reject(500, "Upload processing failed.");
+        } finally {
+          // The data file was moved (or rolled back); drop FileStore's .info sidecar.
+          await unlink(`${stagingPath}.json`).catch(() => {});
+          // Release even on failure: a failed finalize leaves at most an
+          // orphaned data file, which the scan counts by its disk size and
+          // GC/pressure eviction removes.
+          getContainer().stagingLedger.release(upload.id);
+        }
+      });
     },
 
     onResponseError(_req, err) {
