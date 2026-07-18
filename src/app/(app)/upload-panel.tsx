@@ -3,13 +3,16 @@
 import Uppy from "@uppy/core";
 import Dashboard from "@uppy/react/dashboard";
 import Tus from "@uppy/tus";
+import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { CopyButton } from "@/components/copy-button";
 import { isBlockedExtension } from "@/lib/blocked-extensions";
 
+// Order matters: the theme overrides must load after Uppy's own styles.
 import "@uppy/core/css/style.min.css";
 import "@uppy/dashboard/css/style.min.css";
+import "./uppy-theme.css";
 
 interface CompletedUpload {
   fileName: string;
@@ -56,6 +59,11 @@ function createUppy() {
 export function UploadPanel({ remainingBytes }: { remainingBytes: number }) {
   const [uppy] = useState(createUppy);
   const [completed, setCompleted] = useState<CompletedUpload[]>([]);
+  // Uppy's "auto" theme follows prefers-color-scheme, not our next-themes
+  // class toggle — drive it explicitly. Before hydration resolvedTheme is
+  // undefined; fall back to the app default (dark).
+  const { resolvedTheme } = useTheme();
+  const uppyTheme = resolvedTheme === "light" ? "light" : "dark";
 
   useEffect(() => {
     const onSuccess: Parameters<typeof uppy.on<"upload-success">>[1] = (
@@ -95,7 +103,7 @@ export function UploadPanel({ remainingBytes }: { remainingBytes: number }) {
     <div className="flex flex-col gap-6">
       <Dashboard
         uppy={uppy}
-        theme="auto"
+        theme={uppyTheme}
         proudlyDisplayPoweredByUppy={false}
         note={`Anything but executables. Remaining quota: ${(remainingBytes / 1e9).toFixed(1)} GB`}
         height={330}

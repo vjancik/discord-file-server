@@ -1,0 +1,139 @@
+/* Align the Uppy Dashboard with the app's shadcn theme.
+ *
+ * Uppy ships hard-coded colors (light rules plus [data-uppy-theme=dark]
+ * variants) instead of custom properties, so the main surfaces are re-pointed
+ * at our theme tokens here. Selectors are prefixed with [data-uppy-theme]
+ * (present for both light and dark) to match the (0,2,0) specificity of
+ * Uppy's dark rules; this file is imported after Uppy's stylesheets in
+ * upload-panel.tsx so ties resolve in our favor. The tokens themselves flip
+ * with the .dark class, so one set of rules covers both themes — the
+ * Dashboard `theme` prop stays synced to next-themes only so Uppy's
+ * remaining internal styles (icons, focus rings, overlays) follow the toggle.
+ */
+
+[data-uppy-theme] {
+  font-family: var(--font-sans);
+}
+
+/* Outer frame + drop zone */
+[data-uppy-theme] .uppy-Dashboard-inner {
+  background-color: var(--color-card);
+  border-color: var(--color-border);
+  border-radius: var(--radius-lg);
+}
+[data-uppy-theme] .uppy-Dashboard-innerWrap {
+  border-radius: var(--radius-lg);
+}
+[data-uppy-theme] .uppy-Dashboard-AddFiles {
+  border-color: var(--color-border);
+  border-radius: var(--radius-md);
+}
+[data-uppy-theme] .uppy-Dashboard-AddFiles-title {
+  color: var(--color-card-foreground);
+}
+[data-uppy-theme] .uppy-Dashboard-note {
+  color: var(--color-muted-foreground);
+}
+/* "browse files" is a link inside the drop-zone title: blue with a hover
+ * color shift, underline on hover only. The app palette is neutral, so the
+ * blues are defined here per theme instead of via tokens. */
+[data-uppy-theme] .uppy-Dashboard-browse {
+  color: oklch(0.55 0.13 250);
+  transition: color 150ms ease;
+}
+[data-uppy-theme] .uppy-Dashboard-browse:hover,
+[data-uppy-theme] .uppy-Dashboard-browse:focus {
+  color: oklch(0.44 0.16 255);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  /* Uppy's own hover underline is a border — text-decoration covers it */
+  border-bottom: 0;
+}
+[data-uppy-theme="dark"] .uppy-Dashboard-browse {
+  color: oklch(0.78 0.1 245);
+}
+[data-uppy-theme="dark"] .uppy-Dashboard-browse:hover,
+[data-uppy-theme="dark"] .uppy-Dashboard-browse:focus {
+  color: oklch(0.88 0.08 240);
+}
+[data-uppy-theme] .uppy-Dashboard-dropFilesHereHint {
+  color: var(--color-muted-foreground);
+  border-color: var(--color-primary);
+}
+
+/* Header bar shown once files are added */
+[data-uppy-theme] .uppy-DashboardContent-bar {
+  background-color: var(--color-card);
+  border-bottom-color: var(--color-border);
+}
+[data-uppy-theme] .uppy-DashboardContent-title {
+  color: var(--color-foreground);
+}
+[data-uppy-theme] .uppy-DashboardContent-back,
+[data-uppy-theme] .uppy-DashboardContent-save,
+[data-uppy-theme] .uppy-DashboardContent-addMore {
+  color: var(--color-primary);
+}
+[data-uppy-theme] .uppy-DashboardContent-back:focus,
+[data-uppy-theme] .uppy-DashboardContent-save:focus,
+[data-uppy-theme] .uppy-DashboardContent-addMore:focus {
+  background-color: var(--color-accent);
+}
+
+/* File list */
+[data-uppy-theme] .uppy-Dashboard-Item {
+  border-bottom-color: var(--color-border);
+}
+[data-uppy-theme] .uppy-Dashboard-Item-name {
+  color: var(--color-foreground);
+}
+[data-uppy-theme] .uppy-Dashboard-Item-status {
+  color: var(--color-muted-foreground);
+}
+
+/* Status bar + primary action. State colors (complete green, error red,
+ * processing amber) are left as-is — their selectors are more specific than
+ * the base progress rule overridden here. */
+[data-uppy-theme] .uppy-StatusBar {
+  background-color: var(--color-card);
+}
+[data-uppy-theme] .uppy-StatusBar::before {
+  background-color: var(--color-border);
+}
+[data-uppy-theme] .uppy-StatusBar:not([aria-hidden="true"]).is-waiting {
+  background-color: var(--color-card);
+  border-top-color: var(--color-border);
+}
+[data-uppy-theme] .uppy-StatusBar-progress {
+  background-color: var(--color-primary);
+}
+[data-uppy-theme] .uppy-StatusBar-content {
+  color: var(--color-foreground);
+}
+[data-uppy-theme] .uppy-StatusBar-statusSecondary {
+  color: var(--color-muted-foreground);
+}
+[data-uppy-theme] .uppy-StatusBar.is-waiting .uppy-StatusBar-actionBtn--upload {
+  color: var(--color-primary-foreground);
+  background-color: var(--color-primary);
+}
+[data-uppy-theme]
+  .uppy-StatusBar.is-waiting
+  .uppy-StatusBar-actionBtn--upload:hover {
+  background-color: color-mix(in oklab, var(--color-primary) 85%, transparent);
+}
+[data-uppy-theme]
+  .uppy-StatusBar.is-waiting
+  .uppy-StatusBar-actionBtn--upload.uppy-StatusBar-actionBtn--disabled:hover {
+  background-color: var(--color-primary);
+}
+[data-uppy-theme]
+  .uppy-StatusBar:not(.is-waiting)
+  .uppy-StatusBar-actionBtn--upload,
+[data-uppy-theme] .uppy-StatusBar-actionBtn--done {
+  color: var(--color-primary);
+  background-color: transparent;
+}
+[data-uppy-theme] .uppy-StatusBar-actionBtn--done:focus {
+  background-color: var(--color-accent);
+}
