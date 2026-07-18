@@ -40,10 +40,16 @@ export class QuotaService {
     return this.files.sumLiveSizeByOwner(userId);
   }
 
+  /**
+   * @param pendingBytes the user's in-flight upload bytes (staging ledger
+   * reservations). Counting them here closes the check-then-upload TOCTOU:
+   * two concurrent uploads can no longer both pass against the same usage.
+   */
   planUpload(
     userId: string,
     sizeBytes: number,
     autoDeleteOldest: boolean,
+    pendingBytes = 0,
   ): UploadPlan {
     const quota = this.quotaFor(userId);
     const maxFile = Math.min(
@@ -58,7 +64,7 @@ export class QuotaService {
       };
     }
 
-    const used = this.usageFor(userId);
+    const used = this.usageFor(userId) + pendingBytes;
     if (used + sizeBytes <= quota) return { action: "accept", toDelete: [] };
 
     if (!autoDeleteOldest) {

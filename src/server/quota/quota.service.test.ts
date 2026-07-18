@@ -76,6 +76,23 @@ describe("planUpload", () => {
     if (plan.action === "reject") expect(plan.reason).toContain("Over quota");
   });
 
+  test("in-flight pending bytes count against the quota (TOCTOU fix)", () => {
+    repo.insert(testFileRow(alice, { sizeBytes: 400 }));
+    // 400 stored + 500 in flight: a second 300-byte upload must not pass.
+    const plan = service(1000).planUpload(alice, 300, false, 500);
+    expect(plan.action).toBe("reject");
+    // Without pending bytes the same upload fits.
+    expect(service(1000).planUpload(alice, 300, false).action).toBe("accept");
+  });
+
+  test("auto-delete cannot free pending bytes, only stored files", () => {
+    repo.insert(testFileRow(alice, { sizeBytes: 200 }));
+    // 900 in flight + 200 stored, quota 1000: even deleting the stored 200
+    // leaves 900 + 300 over quota → reject despite auto-delete.
+    const plan = service(1000).planUpload(alice, 300, true, 900);
+    expect(plan.action).toBe("reject");
+  });
+
   test("auto-delete frees oldest files first, only as many as needed", () => {
     const oldest = repo.insert(
       testFileRow(alice, { sizeBytes: 400, createdAt: new Date("2026-01-01") }),

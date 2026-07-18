@@ -99,7 +99,11 @@ What holds instead: **revocation** — deleting a file removes the bytes, so eve
 
 ### Quota model
 
-Per-user quota is `STORAGE_LIMIT / active_users`, recomputed at upload time, where *active* means "currently holds at least one live file" (a first upload counts its owner into the divisor). If the divisor grows and someone lands over their new quota, nothing is force-deleted — they just can't upload until they free space, or they opt into auto-delete, which removes their own oldest files (by upload date, ignoring review status) until the new upload fits. An optional `MAX_FILE_SIZE` caps single files below the quota.
+Per-user quota is `STORAGE_LIMIT / active_users`, recomputed at upload time, where *active* means "currently holds at least one live file" (a first upload counts its owner into the divisor). If the divisor grows and someone lands over their new quota, nothing is force-deleted — they just can't upload until they free space, or they opt into auto-delete, which removes their own oldest files (by upload date, ignoring review status) until the new upload fits. An optional `MAX_FILE_SIZE` caps single files below the quota. In-flight uploads count against the quota too, so concurrent uploads can't race past it.
+
+### Capacity model
+
+The staging SSD is budgeted by a mandatory `STAGING_LIMIT`: every upload reserves its full size in an in-memory ledger at creation, and both budgets are additionally clipped to the volume's true free space (`statfs`) at admission time. An upload that doesn't fit right now waits (HTTP 429; the tus client retries for ~10 minutes) while in-flight uploads drain — deliberately without FIFO ordering, so small files never queue behind a large waiting one — and fails fast when nothing is draining or the file can never fit. Under pressure the server eagerly clears dead staging entries before making that call. Full details and policy trade-offs: [docs/capacity.md](docs/capacity.md).
 
 ### Code layout
 
@@ -113,7 +117,8 @@ src/
     embeds/          OG tag builder · UA sniffing (pure functions)
     discord/         guild gate + DiscordGuildGateway port (HTTP adapter / fake for tests)
     media/           MediaProber port (ffprobe/ffmpeg adapter / fake for tests)
-    cleanup/         staging GC · expiry job
+    capacity/        staging ledger · disk probe (statfs) · upload admission (accept/wait/reject)
+    cleanup/         staging GC + pressure eviction · expiry job
     container.ts     composition root — the only place real adapters are wired
   auth/              Better Auth config (Discord OAuth, guild-gate session hook) · DAL
   db/                Drizzle schema · generated auth schema · migrations · bun:sqlite client
@@ -165,7 +170,7 @@ Docker Compose runs three containers: the app (standalone Next.js build executed
 
 ```bash
 cp .env.example .env
-# set: DOMAIN, STORAGE_LIMIT, ALLOWED_GUILD_IDS, ADMIN_DISCORD_IDS,
+# set: DOMAIN, STORAGE_LIMIT, STAGING_LIMIT, ALLOWED_GUILD_IDS, ADMIN_DISCORD_IDS,
 #      DISCORD_CLIENT_ID/SECRET, BETTER_AUTH_SECRET (openssl rand -base64 32),
 #      HOST_* paths (see below)
 bun run prod:up
@@ -231,6 +236,7 @@ The Cloudflare hostname config is untouched (still `caddy:80`); [Caddyfile.tunne
 | `DOMAIN` | ✔ | Public hostname; Caddy site address and link base (`https://$DOMAIN`) |
 | `BASE_URL` | — | Overrides the derived base URL. Unset almost everywhere: dev derives `http://localhost:3000`, production `https://$DOMAIN`. Set it only when neither is right (e.g. [dev through the tunnel](#dev-server-through-the-tunnel)) |
 | `STORAGE_LIMIT` | ✔ | Total byte budget for stored files — raw bytes or `500GB` / `2TiB` style |
+| `STAGING_LIMIT` | ✔ | Total byte budget for the staging area (in-progress uploads); size it to the staging SSD ([capacity model](docs/capacity.md)) |
 | `MAX_FILE_SIZE` | — | Global per-file cap; unset = capped by the user's quota |
 | `DEFAULT_FILE_EXPIRY` | — | Default expiry for new files (`30d`, `12h`); unset = never |
 | `ALLOWED_GUILD_IDS` | ✔ | Comma-separated Discord guild IDs whose members may sign in |

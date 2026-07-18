@@ -24,6 +24,7 @@ export default defineConfig({
       DOMAIN: "localhost",
       BASE_URL,
       STORAGE_LIMIT: "1GB",
+      STAGING_LIMIT: "1GB",
       ALLOWED_GUILD_IDS: "e2e-guild",
       ADMIN_DISCORD_IDS: "e2e-admin-discord-id",
       DISCORD_CLIENT_ID: "e2e-dummy",

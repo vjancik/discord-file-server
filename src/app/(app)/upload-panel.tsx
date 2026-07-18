@@ -24,6 +24,27 @@ interface CompletedUpload {
 // capture it per upload URL so `upload-success` can pick it up.
 const finishBodies = new Map<string, CompletedUpload>();
 
+// Server-side "wait for space" is a 429 on upload creation. @uppy/tus walks
+// this array once per plugin instance across all 429 pauses (the iterator
+// never resets), so its sum is the total wait-for-space budget (~10 min)
+// before the upload fails with the server's reason. It also bounds retries
+// for network/5xx errors, where the counter resets whenever bytes flow.
+const RETRY_DELAYS_MS = [2_000, 5_000, 10_000, ...Array(38).fill(15_000)];
+
+// Persistent "waiting for an upload slot" notice. One global toast, not one
+// per file: a 429 pauses uppy's whole request queue, so waiting is global
+// state. Re-showing with the same id just updates the existing toast; if a
+// second queued file is still waiting after the first gets in, its next
+// retry (≤ 15 s) brings the toast back.
+const WAIT_TOAST_ID = "upload-slot-wait";
+
+function showWaitToast() {
+  toast.loading(
+    "Waiting for an upload slot — the server is busy. Your upload will start automatically.",
+    { id: WAIT_TOAST_ID, duration: Number.POSITIVE_INFINITY },
+  );
+}
+
 function createUppy() {
   return new Uppy({
     restrictions: { maxNumberOfFiles: 10 },
@@ -37,11 +58,23 @@ function createUppy() {
   }).use(Tus, {
     endpoint: "/api/upload",
     removeFingerprintOnSuccess: true,
+    retryDelays: RETRY_DELAYS_MS,
     // Cap each PATCH below Cloudflare's ~100 MB request-body limit so large
     // uploads survive tunneled deployments; direct deployments just see a
     // few more requests per multi-GB file.
     chunkSize: 90 * 1024 * 1024,
     async onAfterResponse(req, res) {
+      // Waiting-for-space only ever happens on upload creation (POST): show
+      // the persistent toast while 429s keep coming, clear it the moment a
+      // creation resolves either way (a hard reject also fires upload-error,
+      // which replaces it with the server's reason).
+      if (req.getMethod() === "POST") {
+        if (res.getStatus() === 429) {
+          showWaitToast();
+          return;
+        }
+        toast.dismiss(WAIT_TOAST_ID);
+      }
       if (res.getStatus() === 200) {
         try {
           const body = JSON.parse(res.getBody()) as CompletedUpload & {
@@ -87,15 +120,25 @@ export function UploadPanel({ remainingBytes }: { remainingBytes: number }) {
       _error,
       response,
     ) => {
+      // The retry budget can exhaust while still waiting (last response was
+      // a 429, so no successful POST ever dismissed the wait toast).
+      toast.dismiss(WAIT_TOAST_ID);
       const detail =
         typeof response?.body === "string" ? response.body : undefined;
       toast.error(detail || "Upload failed. Please try again.");
     };
+    // Cancelling the waiting file must clear the toast too — no further
+    // creation response will ever arrive for it.
+    const onRemoved = () => {
+      if (uppy.getFiles().length === 0) toast.dismiss(WAIT_TOAST_ID);
+    };
     uppy.on("upload-success", onSuccess);
     uppy.on("upload-error", onError);
+    uppy.on("file-removed", onRemoved);
     return () => {
       uppy.off("upload-success", onSuccess);
       uppy.off("upload-error", onError);
+      uppy.off("file-removed", onRemoved);
     };
   }, [uppy]);
 

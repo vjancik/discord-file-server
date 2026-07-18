@@ -1,5 +1,9 @@
 import { getDb } from "@/db/client";
 import { getEnv } from "@/lib/env";
+import { AdmissionService } from "./capacity/admission.service";
+import { StatfsDiskProbe } from "./capacity/disk";
+import { StagingLedger } from "./capacity/staging-ledger";
+import { evictStagingUnderPressure } from "./cleanup/staging-gc";
 import { FileRepository } from "./files/file.repository";
 import { FileService } from "./files/file.service";
 import { FinalizeService } from "./files/finalize.service";
@@ -19,6 +23,9 @@ export interface Container {
   quota: QuotaService;
   finalize: FinalizeService;
   files: FileService;
+  stagingLedger: StagingLedger;
+  diskProbe: StatfsDiskProbe;
+  admission: AdmissionService;
 }
 
 let cached: Container | undefined;
@@ -30,6 +37,8 @@ export function getContainer(): Container {
   const fileRepo = new FileRepository(db);
   const settingsRepo = new SettingsRepository(db);
   const storage = new FileStorage(env.STORAGE_DIR);
+  const stagingLedger = new StagingLedger();
+  const diskProbe = new StatfsDiskProbe();
   cached = {
     fileRepo,
     settingsRepo,
@@ -42,6 +51,21 @@ export function getContainer(): Container {
       defaultExpiryMs: env.DEFAULT_FILE_EXPIRY,
     }),
     files: new FileService(fileRepo, storage),
+    stagingLedger,
+    diskProbe,
+    admission: new AdmissionService(
+      stagingLedger,
+      diskProbe,
+      fileRepo,
+      {
+        stagingDir: env.STAGING_DIR,
+        storageDir: env.STORAGE_DIR,
+        stagingLimit: env.STAGING_LIMIT,
+        storageLimit: env.STORAGE_LIMIT,
+      },
+      (neededBytes) =>
+        evictStagingUnderPressure(env.STAGING_DIR, stagingLedger, neededBytes),
+    ),
   };
   return cached;
 }

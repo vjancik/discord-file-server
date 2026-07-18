@@ -7,13 +7,13 @@ project. Ordered lists within each section are roughly by severity.
 
 ## Correctness / concurrency (highest priority)
 
-- [ ] **Quota check is a TOCTOU race.** `QuotaService.planUpload` reads current
-      usage, then the upload proceeds independently — two concurrent uploads can
-      both pass the check and both land, exceeding quota. Needs a
-      transaction/reservation around check-and-create.
-- [ ] **No cap on in-flight staging bytes.** N parallel uploads, each within
-      quota, can still fill the staging SSD. Quota only counts *completed*
-      files.
+- [x] **Quota check is a TOCTOU race.** Fixed: in-flight uploads are reserved
+      in an in-memory staging ledger and passed into `planUpload` as
+      `pendingBytes`, so concurrent uploads check against committed + pending
+      usage (see `docs/capacity.md`).
+- [x] **No cap on in-flight staging bytes.** Fixed: mandatory `STAGING_LIMIT`
+      + full-size reservations at creation; uploads that don't fit wait (429
+      retry) or fail fast (see `docs/capacity.md`).
 - [x] **No `busy_timeout` pragma on SQLite.** Two concurrent writes (e.g. two
       uploads finalizing simultaneously) can throw `SQLITE_BUSY` and fail a
       finalize whose bytes were already moved. Fixed: `busy_timeout = 5000`
@@ -86,8 +86,12 @@ project. Ordered lists within each section are roughly by severity.
 ## Deployment / ops
 
 - [ ] **No health endpoint** and no compose `healthcheck`s.
-- [ ] **Disk-full (ENOSPC) is unmonitored and unhandled** — the most realistic
-      homelab failure mode; nothing alerts or degrades gracefully.
+- [x] **Disk-full (ENOSPC) is unmonitored and unhandled.** Fixed: admission
+      clips both budgets to physical free space (`statfs`) before any bytes
+      flow, and the hourly job logs low-disk warnings (see `docs/capacity.md`).
+      Remaining gap: a mid-PATCH ENOSPC (disk consumed by something outside
+      the app inside the headroom margin) still surfaces as a generic tus
+      write error rather than a classified one.
 - [ ] **No restore runbook.** Litestream replicating is half a backup; an
       untested restore is not a backup. Default replica target is a path on the
       same box.
@@ -124,8 +128,8 @@ project. Ordered lists within each section are roughly by severity.
 
 1. **CI workflow** (typecheck + biome + `bun test` + Playwright) with a badge —
    highest leverage, makes everything else verifiable.
-2. **The three concurrency holes**: `busy_timeout` pragma, short-code insert
-   retry, transaction/reservation around quota-check-and-create.
+2. **Remaining concurrency hole**: short-code insert retry (`busy_timeout`
+   and the quota reservation are done).
 3. **LICENSE + two screenshots** in the README.
 4. **`/healthz` route + compose healthchecks + pagination** on the admin and
    dashboard queries.

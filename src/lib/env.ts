@@ -48,6 +48,12 @@ const envSchema = z.object({
   BASE_URL: z.url().optional(),
   /** Total bytes the app may use for completed files ("500GB", "2TiB", or raw bytes). */
   STORAGE_LIMIT: bytes,
+  /**
+   * Total bytes the staging area may hold (in-progress uploads, full declared
+   * sizes counted up front). Mandatory: leaving staging unbounded lets N
+   * concurrent uploads fill the SSD even though each passes the quota check.
+   */
+  STAGING_LIMIT: bytes,
   /** Optional global per-file cap; per-file max is otherwise the user's current quota. */
   MAX_FILE_SIZE: bytes.optional(),
   /** Optional default file expiry ("30d", "12h"); unset = files never expire. */

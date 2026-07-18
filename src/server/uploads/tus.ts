@@ -1,6 +1,6 @@
 import { unlink } from "node:fs/promises";
 import { FileStore } from "@tus/file-store";
-import { Server, type Upload } from "@tus/server";
+import { EVENTS, Server, type Upload } from "@tus/server";
 import { auth } from "@/auth/auth";
 import { getEnv } from "@/lib/env";
 import { createLogger } from "@/lib/logger";
@@ -47,7 +47,8 @@ function createTusServer(): Server {
 
     async onUploadCreate(req, upload) {
       const user = await requireSessionUser(req);
-      const { settingsRepo, quota, files } = getContainer();
+      const { settingsRepo, quota, files, admission, stagingLedger } =
+        getContainer();
 
       if (!upload.size)
         throw reject(400, "Upload size must be known up front.");
@@ -60,12 +61,30 @@ function createTusServer(): Server {
       );
       if (!classified.ok) throw reject(422, classified.reason);
 
+      // The user's in-flight reservations count against their quota so two
+      // concurrent uploads can't both pass against the same usage.
       const plan = quota.planUpload(
         user.id,
         upload.size,
         settingsRepo.get(user.id).autoDeleteOldest,
+        stagingLedger.reservedByOwner(user.id),
       );
       if (plan.action === "reject") throw reject(413, plan.reason);
+
+      // Admission runs before the plan's auto-deletes execute (they're
+      // credited via bytesFreedByPlan): a wait/reject must not have already
+      // deleted the user's old files — a 429 retry re-runs this whole hook.
+      const decision = await admission.admit({
+        ownerId: user.id,
+        sizeBytes: upload.size,
+        bytesFreedByPlan: plan.toDelete.reduce((s, f) => s + f.sizeBytes, 0),
+      });
+      // 429 = "retry later": the tus client backs off and retries, which is
+      // our no-FIFO wait queue. Hard rejects must be a non-429 4xx — a 5xx
+      // (e.g. the semantically nicer 507) would also be retried forever.
+      if (decision.action === "wait") throw reject(429, decision.reason);
+      if (decision.action === "reject") throw reject(413, decision.reason);
+
       for (const old of plan.toDelete) {
         log.info(
           { fileId: old.id, userId: user.id },
@@ -73,6 +92,11 @@ function createTusServer(): Server {
         );
         await files.delete(old.id, user.id);
       }
+
+      // Reserve after all gates pass. If FileStore.create still fails (e.g.
+      // disk error) the reservation leaks until the hourly reconcile — the
+      // sidecar won't exist, so reconciliation releases it.
+      stagingLedger.reserve(upload.id, upload.size, user.id);
 
       return { metadata: { ...upload.metadata, ownerId: user.id } };
     },
@@ -109,6 +133,10 @@ function createTusServer(): Server {
       } finally {
         // The data file was moved (or rolled back); drop FileStore's .info sidecar.
         await unlink(`${stagingPath}.json`).catch(() => {});
+        // Release even on failure: a failed finalize leaves at most an
+        // orphaned data file, which the scan counts by its disk size and
+        // GC/pressure eviction removes.
+        getContainer().stagingLedger.release(upload.id);
       }
     },
 
@@ -122,6 +150,16 @@ function createTusServer(): Server {
 let cached: Server | undefined;
 
 export function getTusServer(): Server {
-  cached ??= createTusServer();
+  if (!cached) {
+    cached = createTusServer();
+    // Client-cancelled uploads (uppy cancel → tus DELETE): FileStore.remove
+    // already deleted the data file and sidecar; free the reservation too.
+    cached.on(
+      EVENTS.POST_TERMINATE,
+      (_req: Request, _res: unknown, id: string) => {
+        getContainer().stagingLedger.release(id);
+      },
+    );
+  }
   return cached;
 }
