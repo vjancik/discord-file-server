@@ -4,7 +4,7 @@ import { Check } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { DeleteFileButton } from "@/components/files/delete-file-button";
-import { KindIcon } from "@/components/files/file-cells";
+import { DateCell, KindIcon } from "@/components/files/file-cells";
 import { FilePreview } from "@/components/files/preview-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -124,7 +124,7 @@ export function ReviewQueue({
               <p className="text-muted-foreground text-sm">
                 {selected.ownerName} · {selected.mimeType} ·{" "}
                 {formatBytes(selected.sizeBytes)} ·{" "}
-                {new Date(selected.createdAt).toLocaleString()}
+                <DateCell iso={selected.createdAt} />
               </p>
               <FilePreview file={selected} />
             </>

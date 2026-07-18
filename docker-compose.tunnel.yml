@@ -1,0 +1,29 @@
+# Cloudflare Tunnel overlay for beta testing behind CGNAT. Run on top of the
+# base file:
+#   docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d --build
+# (or `bun run beta:up`).
+#
+# TLS terminates at Cloudflare's edge; cloudflared dials out from the compose
+# bridge network and forwards requests to Caddy, so no host ports are
+# published. Configure the tunnel's public hostname in Zero Trust →
+# Networks → Tunnels as:  ${DOMAIN} → service HTTP → caddy:80
+#
+# Known constraint: Cloudflare's proxy caps request bodies at ~100 MB, so a
+# single tus PATCH above that fails — uploads bigger than 100 MB need a
+# sub-100MB `chunkSize` in the Uppy Tus options (see upload-panel.tsx).
+services:
+  caddy:
+    # Traffic only enters through the tunnel; drop the base file's 80/443
+    # host bindings and swap in the plain-HTTP Caddyfile.
+    ports: !reset []
+    volumes:
+      - ./Caddyfile.tunnel:/etc/caddy/Caddyfile:ro
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - caddy

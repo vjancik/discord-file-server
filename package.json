@@ -15,7 +15,10 @@
     "lint": "biome check",
     "format": "biome format --write",
     "prod:up": "docker compose up --build -d",
-    "prod:down": "docker compose down"
+    "prod:down": "docker compose down",
+    "beta:up": "docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up --build -d",
+    "beta:dev": "docker compose -f docker-compose.yml -f docker-compose.tunnel.yml -f docker-compose.tunnel.dev.yml up -d caddy cloudflared && bun run dev",
+    "beta:down": "docker compose -f docker-compose.yml -f docker-compose.tunnel.yml down"
   },
   "dependencies": {
     "@tanstack/react-table": "^8.21.3",

@@ -1,4 +1,8 @@
 "use client";
+// TanStack Table v8 is not React Compiler compatible (the table instance is
+// mutated during render); compiler memoization wedges sorting in a render
+// loop. Opt this module out and memoize inputs by hand.
+"use no memo";
 
 import {
   type ColumnDef,
@@ -10,9 +14,13 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { ArrowUpDown } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { DeleteFileButton } from "@/components/files/delete-file-button";
-import { StatusBadge, ThumbCell } from "@/components/files/file-cells";
+import {
+  DateCell,
+  StatusBadge,
+  ThumbCell,
+} from "@/components/files/file-cells";
 import { PreviewDialog } from "@/components/files/preview-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -72,87 +80,102 @@ export function AdminFilesTable({
   const [kindFilter, setKindFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
 
-  const filtered = files.filter((f) => {
-    if (kindFilter !== "all" && f.kind !== kindFilter) return false;
-    if (statusFilter === "deleted" && !f.deletedAt) return false;
-    if (statusFilter === "pending" && (f.status !== "pending" || f.deletedAt))
-      return false;
-    if (statusFilter === "approved" && (f.status !== "approved" || f.deletedAt))
-      return false;
-    const q = search.trim().toLowerCase();
-    if (
-      q &&
-      !f.fileName.toLowerCase().includes(q) &&
-      !(f.ownerName ?? "").toLowerCase().includes(q)
-    )
-      return false;
-    return true;
-  });
+  // Table inputs need stable identities across renders — a fresh data array
+  // every render makes TanStack re-derive state and loop.
+  const filtered = useMemo(
+    () =>
+      files.filter((f) => {
+        if (kindFilter !== "all" && f.kind !== kindFilter) return false;
+        if (statusFilter === "deleted" && !f.deletedAt) return false;
+        if (
+          statusFilter === "pending" &&
+          (f.status !== "pending" || f.deletedAt)
+        )
+          return false;
+        if (
+          statusFilter === "approved" &&
+          (f.status !== "approved" || f.deletedAt)
+        )
+          return false;
+        const q = search.trim().toLowerCase();
+        if (
+          q &&
+          !f.fileName.toLowerCase().includes(q) &&
+          !(f.ownerName ?? "").toLowerCase().includes(q)
+        )
+          return false;
+        return true;
+      }),
+    [files, kindFilter, statusFilter, search],
+  );
 
-  const columns: ColumnDef<FileView>[] = [
-    {
-      id: "thumb",
-      header: "",
-      cell: ({ row }) => <ThumbCell file={row.original} />,
-      enableSorting: false,
-    },
-    {
-      accessorKey: "fileName",
-      header: sortableHeader("Name"),
-      cell: ({ row }) => (
-        <span
-          className={cn(
-            "block max-w-64 truncate font-medium",
-            row.original.deletedAt && "text-muted-foreground line-through",
-          )}
-          title={row.original.fileName}
-        >
-          {row.original.fileName}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "ownerName",
-      header: sortableHeader("User"),
-      cell: ({ row }) => row.original.ownerName ?? "—",
-    },
-    {
-      accessorKey: "sizeBytes",
-      header: sortableHeader("Size"),
-      cell: ({ row }) => formatBytes(row.original.sizeBytes),
-    },
-    {
-      accessorKey: "createdAt",
-      header: sortableHeader("Uploaded"),
-      cell: ({ row }) => new Date(row.original.createdAt).toLocaleString(),
-    },
-    {
-      id: "status",
-      header: "Status",
-      cell: ({ row }) =>
-        row.original.deletedAt ? (
-          <Badge variant="destructive">deleted</Badge>
-        ) : (
-          <StatusBadge status={row.original.status} />
+  const columns: ColumnDef<FileView>[] = useMemo(
+    () => [
+      {
+        id: "thumb",
+        header: "",
+        cell: ({ row }) => <ThumbCell file={row.original} />,
+        enableSorting: false,
+      },
+      {
+        accessorKey: "fileName",
+        header: sortableHeader("Name"),
+        cell: ({ row }) => (
+          <span
+            className={cn(
+              "block max-w-64 truncate font-medium",
+              row.original.deletedAt && "text-muted-foreground line-through",
+            )}
+            title={row.original.fileName}
+          >
+            {row.original.fileName}
+          </span>
         ),
-    },
-    {
-      id: "actions",
-      header: "",
-      enableSorting: false,
-      cell: ({ row }) =>
-        row.original.deletedAt ? null : (
-          <div className="flex items-center justify-end gap-1">
-            <PreviewDialog file={row.original} />
-            <DeleteFileButton
-              fileId={row.original.id}
-              fileName={row.original.fileName}
-              skipConfirm={skipConfirm}
-            />
-          </div>
-        ),
-    },
-  ];
+      },
+      {
+        accessorKey: "ownerName",
+        header: sortableHeader("User"),
+        cell: ({ row }) => row.original.ownerName ?? "—",
+      },
+      {
+        accessorKey: "sizeBytes",
+        header: sortableHeader("Size"),
+        cell: ({ row }) => formatBytes(row.original.sizeBytes),
+      },
+      {
+        accessorKey: "createdAt",
+        header: sortableHeader("Uploaded"),
+        cell: ({ row }) => <DateCell iso={row.original.createdAt} />,
+      },
+      {
+        id: "status",
+        header: "Status",
+        cell: ({ row }) =>
+          row.original.deletedAt ? (
+            <Badge variant="destructive">deleted</Badge>
+          ) : (
+            <StatusBadge status={row.original.status} />
+          ),
+      },
+      {
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.deletedAt ? null : (
+            <div className="flex items-center justify-end gap-1">
+              <PreviewDialog file={row.original} />
+              <DeleteFileButton
+                fileId={row.original.id}
+                fileName={row.original.fileName}
+                skipConfirm={skipConfirm}
+              />
+            </div>
+          ),
+      },
+    ],
+    [skipConfirm],
+  );
 
   const table = useReactTable({
     data: filtered,

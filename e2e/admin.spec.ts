@@ -49,6 +49,22 @@ test("admin sees the review queue and can approve a pending file", async ({
   await adminPage.goto("/admin/files");
   await expect(adminPage.getByText("review me.mp4")).toBeVisible();
   await expect(adminPage.getByText("approved").first()).toBeVisible();
+
+  // Sorting must not wedge the page in a render loop: after clicking sort
+  // headers the main thread must stay responsive and React must not report
+  // an update-depth blowup.
+  const consoleErrors: string[] = [];
+  adminPage.on("console", (msg) => {
+    if (msg.type() === "error") consoleErrors.push(msg.text());
+  });
+  await adminPage.getByRole("button", { name: /uploaded/i }).click();
+  await adminPage.getByRole("button", { name: /^name$/i }).click();
+  await expect
+    .poll(() => adminPage.evaluate(() => 1 + 1), { timeout: 5_000 })
+    .toBe(2);
+  expect(consoleErrors.filter((e) => /maximum update depth/i.test(e))).toEqual(
+    [],
+  );
   await adminContext.close();
 });
 

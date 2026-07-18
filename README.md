@@ -18,6 +18,8 @@ The interesting problems here aren't CRUD: making arbitrary self-hosted URLs *em
 - [Development](#development)
 - [Testing](#testing)
 - [Deployment](#deployment)
+  - [Beta over a Cloudflare Tunnel](#beta-over-a-cloudflare-tunnel)
+  - [Dev server through the tunnel](#dev-server-through-the-tunnel)
   - [Configuration reference](#configuration-reference)
 - [Design notes & trade-offs](#design-notes--trade-offs)
 
@@ -77,7 +79,13 @@ Discord's crawler (`Discordbot` UA) follows redirects and embeds based on the fi
 
 Non-media files can't render as players, so they unfurl as a card: `og:title` is the original filename (extension included), `og:description` is "size — uploaded by name", and the link itself serves with `Content-Disposition: attachment` so clicking it downloads directly. Media is **never** served with an attachment disposition — that's the single most common way to kill a Discord embed, and it's enforced in the Caddyfile by extension matcher.
 
-Two constraints are accepted rather than fought: Discord caches unfurls per-URL server-side (iterate on OG tags with fresh short codes), and YouTube-style iframe players are limited to Discord's hardcoded domain allowlist (raw `og:video` → mp4 gives an inline player anyway).
+Some Discord-side ceilings are accepted rather than fought (confirmed against live Discord):
+
+- **Very large videos unfurl as a card, not a player.** Above roughly 500 MB, Discord's media pipeline declines to back an inline player. The threshold is Discord's own and undocumented; the file still streams normally in a browser, and no header or tag changes it.
+- **External links never get an audio player.** Discord's unfurler ignores `og:audio` at any file size — only native uploads get the audio player UI. The tags are still emitted (other platforms honor them); on Discord, audio unfurls as a card that plays one click away.
+- Discord caches unfurls per-URL server-side (iterate on OG tags with fresh short codes), and YouTube-style iframe players are limited to Discord's hardcoded domain allowlist (raw `og:video` → mp4 gives an inline player anyway).
+
+A mitigation for the first two — upload-time embed renditions (capped-bitrate video preview; audio wrapped in an audio-only video container, which Discord's embed player does play) — is tracked as future work in [docs/current-limitations.md](docs/current-limitations.md).
 
 ### Security model
 
@@ -140,7 +148,9 @@ bun run dev                 # http://localhost:3000
 
 Discord OAuth setup: create an application at the [Discord developer portal](https://discord.com/developers/applications), add `http://localhost:3000/api/auth/callback/discord` as a redirect URL, and put the client ID/secret plus your guild and admin IDs in `.env`. Migrations run automatically at boot; `bun run db:generate` regenerates them after schema changes.
 
-Useful scripts: `typecheck`, `codecheck` / `codecheck:fix` (Biome), `test`, `test:e2e`, `prod:up` / `prod:down`.
+In dev (`NODE_ENV=development`) the link base defaults to `http://localhost:3000`, so `BASE_URL` can stay unset; data lands in the local `./.data/*` paths from `.env`. Everything else in the [configuration reference](#configuration-reference) applies to all environments.
+
+Useful scripts: `typecheck`, `codecheck` / `codecheck:fix` (Biome), `test`, `test:e2e`, `prod:up` / `prod:down`, `beta:up` / `beta:dev` / `beta:down` (see [beta](#beta-over-a-cloudflare-tunnel)).
 
 ## Testing
 
@@ -178,20 +188,59 @@ The volume topology mirrors the storage design:
 
 After the first deploy, run the ops smoke checks at the bottom of the [manual checklist](docs/manual-embed-checklist.md) — most importantly that a Range request against `/f/*` returns `206` (Discord video scrubbing depends on it).
 
+### Beta over a Cloudflare Tunnel
+
+For testing real HTTPS + Discord embeds from a box behind CGNAT (no reachable 80/443), `docker-compose.tunnel.yml` overlays the production stack with a `cloudflared` connector. TLS terminates at Cloudflare's edge; Caddy serves plain HTTP internally ([Caddyfile.tunnel](Caddyfile.tunnel)) since ACME is impossible without inbound ports.
+
+One-time setup:
+
+1. Cloudflare Zero Trust → Networks → Tunnels → create a tunnel, copy the connector token. Under **Public Hostname**, route your beta hostname → service **HTTP** → `caddy:80` (the domain must be on Cloudflare DNS).
+2. Register `https://<beta-domain>/api/auth/callback/discord` as an OAuth redirect URL.
+3. In `.env`:
+
+   ```bash
+   DOMAIN=beta.example.com
+   CLOUDFLARE_TUNNEL_TOKEN=eyJ...
+   HOST_STORAGE_DIR=./data/beta/uploads     # in-repo beta data is fine
+   HOST_STAGING_DIR=./data/beta/staging
+   HOST_DB_DIR=./data/beta/db
+   HOST_REPLICA_DIR=./data/beta/replica
+   ```
+
+4. `mkdir -p data/beta/{uploads,staging,db,replica} && sudo chown -R 1001:1001 data/beta`
+
+Then `bun run beta:up` (build + start; check `cloudflared` logs for `Registered tunnel connection`) and `bun run beta:down` to stop. Cloudflare's proxy caps request bodies at ~100 MB, which is why the Uppy tus client chunks uploads at 90 MiB — uploads of any size work through the tunnel, just slower than a direct connection.
+
+### Dev server through the tunnel
+
+For iterating against the real domain (unminified React errors, HMR, no image rebuilds), a second overlay points Caddy at a **host-run** `next dev` instead of the app container:
+
+```bash
+# .env: keep the beta DOMAIN/token, and additionally set
+BASE_URL=https://beta.example.com   # dev mode otherwise mints localhost links
+
+bun run beta:dev   # starts only caddy + cloudflared, then `next dev` on the host
+```
+
+The Cloudflare hostname config is untouched (still `caddy:80`); [Caddyfile.tunnel.dev](Caddyfile.tunnel.dev) proxies everything — including `/f/*`, via the dev fallback route — to `host.docker.internal:3000`, and `allowedDevOrigins` in [next.config.ts](next.config.ts) lets the domain reach dev-only assets. Note this mode uses the *local dev* data paths (`./.data/*`, your user), not the container stack's `./data/beta/*` (uid 1001) — the two worlds stay isolated, so expect a fresh sign-in when switching, and comment `BASE_URL` back out for plain local dev.
+
 ### Configuration reference
 
 | Variable | Required | Meaning |
 |---|---|---|
 | `DOMAIN` | ✔ | Public hostname; Caddy site address and link base (`https://$DOMAIN`) |
-| `BASE_URL` | dev only | Overrides the derived base URL (e.g. `http://localhost:3000`) |
+| `BASE_URL` | — | Overrides the derived base URL. Unset almost everywhere: dev derives `http://localhost:3000`, production `https://$DOMAIN`. Set it only when neither is right (e.g. [dev through the tunnel](#dev-server-through-the-tunnel)) |
 | `STORAGE_LIMIT` | ✔ | Total byte budget for stored files — raw bytes or `500GB` / `2TiB` style |
 | `MAX_FILE_SIZE` | — | Global per-file cap; unset = capped by the user's quota |
 | `DEFAULT_FILE_EXPIRY` | — | Default expiry for new files (`30d`, `12h`); unset = never |
 | `ALLOWED_GUILD_IDS` | ✔ | Comma-separated Discord guild IDs whose members may sign in |
 | `ADMIN_DISCORD_IDS` | ✔ | Comma-separated Discord user IDs with admin access |
 | `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | ✔ | Discord OAuth application credentials |
+| `REQUIRE_EMAIL` | — | Ask Discord for the user's email at sign-in (`true`/`false`, default off). The app never uses it — off keeps email off the OAuth consent screen and stores a placeholder |
 | `BETTER_AUTH_SECRET` | ✔ | Session signing secret (≥ 32 random bytes) |
 | `STAGING_DIR` / `STORAGE_DIR` / `DATABASE_PATH` | ✔ | Data paths (fixed inside the containers; compose maps `HOST_*` onto them) |
+| `HOST_STORAGE_DIR` / `HOST_STAGING_DIR` / `HOST_DB_DIR` / `HOST_REPLICA_DIR` | compose | Host directories mounted into the containers (see volume table above); must be writable by uid 1001 |
+| `CLOUDFLARE_TUNNEL_TOKEN` | tunnel only | `cloudflared` connector token for the [beta overlays](#beta-over-a-cloudflare-tunnel) |
 
 ## Design notes & trade-offs
 

@@ -34,6 +34,10 @@ function createUppy() {
   }).use(Tus, {
     endpoint: "/api/upload",
     removeFingerprintOnSuccess: true,
+    // Cap each PATCH below Cloudflare's ~100 MB request-body limit so large
+    // uploads survive tunneled deployments; direct deployments just see a
+    // few more requests per multi-GB file.
+    chunkSize: 90 * 1024 * 1024,
     async onAfterResponse(req, res) {
       if (res.getStatus() === 200) {
         try {

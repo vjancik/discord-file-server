@@ -43,6 +43,7 @@ next-env.d.ts
 
 # local dev data (sqlite, staging, uploads)
 /.data/
+/data/
 /dev.sqlite*
 
 # playwright

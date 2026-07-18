@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { parseBytes, parseDuration } from "./units";
+import { parseBool, parseBytes, parseDuration } from "./units";
 
 const csv = z
   .string()
@@ -29,6 +29,18 @@ const duration = z.string().transform((s, ctx) => {
   }
 });
 
+const bool = z
+  .string()
+  .optional()
+  .transform((s, ctx) => {
+    try {
+      return parseBool(s);
+    } catch (e) {
+      ctx.addIssue({ code: "custom", message: (e as Error).message });
+      return z.NEVER;
+    }
+  });
+
 const envSchema = z.object({
   /** Public hostname, e.g. "files.example.com". Used for link generation and Caddy. */
   DOMAIN: z.string().min(1),
@@ -46,6 +58,12 @@ const envSchema = z.object({
   ADMIN_DISCORD_IDS: csv,
   DISCORD_CLIENT_ID: z.string().min(1),
   DISCORD_CLIENT_SECRET: z.string().min(1),
+  /**
+   * Ask Discord for the user's email at sign-in (adds the `email` OAuth
+   * scope). Off by default: the app never uses the email, so users are
+   * stored with a placeholder address instead.
+   */
+  REQUIRE_EMAIL: bool,
   BETTER_AUTH_SECRET: z.string().min(1),
   /** SSD directory for in-progress tus uploads. */
   STAGING_DIR: z.string().min(1),

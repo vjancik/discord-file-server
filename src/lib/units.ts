@@ -54,6 +54,20 @@ export function parseDuration(input: string): number {
   return Math.floor(value);
 }
 
+const TRUE_WORDS = new Set(["true", "1", "yes", "on"]);
+const FALSE_WORDS = new Set(["false", "0", "no", "off", ""]);
+
+/**
+ * Parse a boolean from an env var: true/1/yes/on and false/0/no/off,
+ * case-insensitive. Unset or empty means false.
+ */
+export function parseBool(input: string | undefined): boolean {
+  const word = (input ?? "").trim().toLowerCase();
+  if (TRUE_WORDS.has(word)) return true;
+  if (FALSE_WORDS.has(word)) return false;
+  throw new Error(`Invalid boolean: "${input}"`);
+}
+
 /** Human-readable byte size for UI and OG descriptions (decimal units, 1 decimal place). */
 export function formatBytes(bytes: number): string {
   if (bytes < 1000) return `${bytes} B`;

@@ -14,10 +14,11 @@ project. Ordered lists within each section are roughly by severity.
 - [ ] **No cap on in-flight staging bytes.** N parallel uploads, each within
       quota, can still fill the staging SSD. Quota only counts *completed*
       files.
-- [ ] **No `busy_timeout` pragma on SQLite.** Two concurrent writes (e.g. two
+- [x] **No `busy_timeout` pragma on SQLite.** Two concurrent writes (e.g. two
       uploads finalizing simultaneously) can throw `SQLITE_BUSY` and fail a
-      finalize whose bytes were already moved. One pragma in
-      `src/db/client.ts` fixes it.
+      finalize whose bytes were already moved. Fixed: `busy_timeout = 5000`
+      in `src/db/client.ts` (also unbroke the Docker build, where page-data
+      workers raced the WAL pragma on a fresh db file).
 - [ ] **Short-code collision is not retried.** The unique index catches the
       collision but the insert just throws (500 + orphaned storage dir). The
       implementation plan specified retry-on-unique-violation; it was never
@@ -47,8 +48,25 @@ project. Ordered lists within each section are roughly by severity.
       repository call blocks the event loop.
 - [ ] **No error boundaries** — no `error.tsx` / custom `not-found.tsx`;
       failures render Next's default chrome.
-- [ ] `respectForwardedHeaders: true` trusts client-supplied `X-Forwarded-*`
-      if the app port is ever reachable without Caddy in front.
+- [x] `respectForwardedHeaders: true` trusts client-supplied `X-Forwarded-*`
+      if the app port is ever reachable without Caddy in front. Resolved: the
+      option was removed — tus upload URLs are now minted from the configured
+      `baseUrl` (`generateUrl`), never from request headers.
+
+## Embed fidelity (Discord-side ceilings, confirmed in beta 2026-07)
+
+- [ ] **No embed renditions for oversized video or audio.** Confirmed against
+      live Discord: videos above ~500 MB unfurl as a card without a player
+      (Discord's media pipeline declines large files; threshold undocumented),
+      and `og:audio` is ignored entirely — external links never get an audio
+      player, only native uploads do. Both are fixable with upload-time
+      renditions in `finalize.service.ts`: a capped-bitrate preview for
+      oversized videos, and an audio-only mp4/webm wrapper for audio files
+      (Discord's embed video player plays audio-only containers). Store like
+      thumbnails (`previewPath` alongside `thumbnailPath`), point `og:video`
+      at the rendition, keep `/f/` serving the original. Costs: transcode CPU
+      at finalize time (background it or accept slower publish for big files)
+      and extra storage per rendition.
 
 ## Testing
 

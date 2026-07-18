@@ -8,15 +8,16 @@ import { type NextRequest, NextResponse } from "next/server";
  */
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const sessionCookie = getSessionCookie(request);
 
+  // /login must not redirect on mere cookie presence: a stale cookie whose
+  // session row is gone (revoked, expired, restored DB) would ping-pong
+  // against requireUser() forever. The login page itself redirects
+  // authenticated users after a real session lookup.
   if (pathname === "/login") {
-    return sessionCookie
-      ? NextResponse.redirect(new URL("/", request.nextUrl))
-      : NextResponse.next();
+    return NextResponse.next();
   }
 
-  if (!sessionCookie) {
+  if (!getSessionCookie(request)) {
     return NextResponse.redirect(new URL("/login", request.nextUrl));
   }
 

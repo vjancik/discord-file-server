@@ -34,9 +34,12 @@ function createTusServer(): Server {
   return new Server({
     path: "/api/upload",
     datastore: new FileStore({ directory: env.STAGING_DIR }),
-    // Behind Caddy: build upload URLs from X-Forwarded-* so PATCH requests
-    // from the browser hit https://DOMAIN/... and not localhost:3000.
-    respectForwardedHeaders: true,
+    // Mint upload URLs from the configured public origin, never from request
+    // headers: TLS terminates upstream (Caddy, or Cloudflare's edge when
+    // tunneled), so requests reach the app as plain http and a header-derived
+    // Location would be http:// — which browsers then block as mixed content
+    // on the follow-up PATCH.
+    generateUrl: (_req, { path, id }) => `${env.baseUrl}${path}/${id}`,
 
     async onIncomingRequest(req) {
       await requireSessionUser(req);

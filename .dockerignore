@@ -1,0 +1,49 @@
+# Docker does NOT read .gitignore — this file guards the build context for
+# `COPY . .` in the Dockerfile. Keep in sync with .gitignore's spirit: the
+# builder stage only needs app source + build config (bun install recreates
+# node_modules inside the image).
+
+# VCS / agent metadata
+.git
+.gitignore
+.claude
+
+# dependencies (reinstalled from bun.lock inside the image)
+node_modules
+
+# build outputs
+.next
+out
+build
+coverage
+*.tsbuildinfo
+
+# secrets & env — compose injects .env at runtime via env_file; it must never
+# end up in an image layer
+.env*
+!.env.example
+
+# local data (sqlite, staging, uploads, beta tunnel data)
+.data
+data
+dev.sqlite*
+
+# tests & tooling not used by `next build`
+e2e
+test-results
+playwright-report
+playwright.config.ts
+scripts
+biome.json
+
+# deployment files (consumed by compose on the host, not by the image)
+Dockerfile
+.dockerignore
+docker-compose*.yml
+Caddyfile*
+litestream.yml
+
+# docs
+docs
+README.md
+CLAUDE.md

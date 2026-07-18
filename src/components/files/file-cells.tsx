@@ -7,8 +7,24 @@ import {
   Image as ImageIcon,
   Music,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { FileView } from "@/lib/file-view";
+
+/**
+ * Locale-formatted timestamp without an SSR hydration mismatch: the server
+ * (and first client render) show a deterministic UTC string; the viewer's
+ * locale/timezone rendering swaps in after mount.
+ */
+export function DateCell({ iso }: { iso: string }) {
+  const [local, setLocal] = useState<string | null>(null);
+  useEffect(() => setLocal(new Date(iso).toLocaleString()), [iso]);
+  return (
+    <span title={iso}>
+      {local ?? `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`}
+    </span>
+  );
+}
 
 export function KindIcon({ kind }: { kind: FileView["kind"] }) {
   const cls = "size-4 text-muted-foreground";

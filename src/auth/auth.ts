@@ -4,6 +4,7 @@ import { betterAuth } from "better-auth/minimal";
 import { nextCookies } from "better-auth/next-js";
 import { getDb, schema } from "@/db/client";
 import { getEnv } from "@/lib/env";
+import { parseBool } from "@/lib/units";
 import { GuildGate } from "@/server/discord/guild-gate";
 import { HttpDiscordGuildGateway } from "@/server/discord/guild-gateway";
 import { getDiscordAccount } from "./discord-account";
@@ -29,7 +30,19 @@ export const auth = betterAuth({
     discord: {
       clientId: process.env.DISCORD_CLIENT_ID ?? "",
       clientSecret: process.env.DISCORD_CLIENT_SECRET ?? "",
-      scope: ["identify", "guilds"],
+      // Explicit scopes only — Better Auth would otherwise add its default
+      // `identify email`. Email stays off the consent screen unless the
+      // deployment opts in via REQUIRE_EMAIL.
+      disableDefaultScope: true,
+      scope: parseBool(process.env.REQUIRE_EMAIL)
+        ? ["identify", "guilds", "email"]
+        : ["identify", "guilds"],
+      // Discord can return email: null even when the scope is granted
+      // (phone-only accounts), and Better Auth requires a user email —
+      // synthesize a stable placeholder from the immutable Discord ID.
+      mapProfileToUser: (profile) => ({
+        email: profile.email ?? `${profile.id}@discord.placeholder.local`,
+      }),
     },
   },
   emailAndPassword: { enabled: isE2ETestAuth },

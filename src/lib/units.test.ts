@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatBytes, parseBytes, parseDuration } from "./units";
+import { formatBytes, parseBool, parseBytes, parseDuration } from "./units";
 
 describe("parseBytes", () => {
   test("plain integers are bytes", () => {
@@ -46,6 +46,30 @@ describe("parseDuration", () => {
     expect(() => parseDuration("")).toThrow();
     expect(() => parseDuration("soon")).toThrow();
     expect(() => parseDuration("5y")).toThrow();
+  });
+});
+
+describe("parseBool", () => {
+  test("truthy words, case-insensitive", () => {
+    expect(parseBool("true")).toBe(true);
+    expect(parseBool("TRUE")).toBe(true);
+    expect(parseBool("1")).toBe(true);
+    expect(parseBool("yes")).toBe(true);
+    expect(parseBool(" on ")).toBe(true);
+  });
+
+  test("falsy words, unset, and empty", () => {
+    expect(parseBool("false")).toBe(false);
+    expect(parseBool("0")).toBe(false);
+    expect(parseBool("no")).toBe(false);
+    expect(parseBool("off")).toBe(false);
+    expect(parseBool("")).toBe(false);
+    expect(parseBool(undefined)).toBe(false);
+  });
+
+  test("rejects garbage", () => {
+    expect(() => parseBool("truee")).toThrow();
+    expect(() => parseBool("2")).toThrow();
   });
 });
 

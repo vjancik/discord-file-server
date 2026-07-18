@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { getSession } from "@/auth/dal";
 import { SignInButton } from "./sign-in-button";
 
 export const metadata = { title: "Sign in — DiscordFileServer" };
@@ -7,6 +9,10 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
+  // Real session check (not cookie presence): signed-in users go home,
+  // stale-cookie visitors get the login page instead of a redirect loop.
+  if (await getSession()) redirect("/");
+
   const { error } = await searchParams;
 
   return (
