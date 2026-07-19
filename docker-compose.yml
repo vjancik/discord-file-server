@@ -7,7 +7,9 @@
 # The app container runs as uid 1001 — make the host dirs writable by it.
 services:
   app:
-    build: .
+    build:
+      context: .
+      target: runner
     restart: unless-stopped
     env_file: .env
     environment:
@@ -21,6 +23,25 @@ services:
       - ${HOST_DB_DIR}:/srv/db
     expose:
       - "3000"
+
+  # Discord bot (QoL): /upload command + admin-channel review of pending
+  # uploads. Shares the SQLite DB (WAL, multi-process) and the storage mount
+  # (reject = delete bytes); waits at boot until the app has migrated.
+  bot:
+    build:
+      context: .
+      target: bot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      STORAGE_DIR: /srv/uploads
+      DATABASE_PATH: /srv/db/app.sqlite
+      BASE_URL: https://${DOMAIN}
+    volumes:
+      - ${HOST_STORAGE_DIR}:/srv/uploads
+      - ${HOST_DB_DIR}:/srv/db
+    depends_on:
+      - app
 
   caddy:
     image: caddy:2-alpine

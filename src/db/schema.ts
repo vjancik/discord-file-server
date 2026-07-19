@@ -55,6 +55,23 @@ export const files = sqliteTable(
   ],
 );
 
+/**
+ * Open admin-review announcements posted to Discord by the bot process
+ * (src/bot). One row per pending file whose message awaits an Approve/Reject
+ * decision; rows are deleted once resolved (the Discord message itself is the
+ * durable history). The web app never writes this table.
+ */
+export const discordReviewMessages = sqliteTable("discord_review_messages", {
+  fileId: text("file_id")
+    .primaryKey()
+    .references(() => files.id, { onDelete: "cascade" }),
+  channelId: text("channel_id").notNull(),
+  messageId: text("message_id").notNull(),
+  postedAt: integer("posted_at", { mode: "timestamp_ms" })
+    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+    .notNull(),
+});
+
 export const userSettings = sqliteTable("user_settings", {
   userId: text("user_id")
     .primaryKey()

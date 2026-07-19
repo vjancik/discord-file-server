@@ -34,3 +34,20 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 CMD ["bun", "server.js"]
+
+# ── Discord bot ────────────────────────────────────────────────────────────────
+# Separate process/container sharing the SQLite DB and storage mount with the
+# app. No build step: Bun runs the TypeScript directly (tsconfig.json is
+# needed at runtime for the @/* path aliases).
+FROM base AS bot
+ENV NODE_ENV=production
+RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
+
+WORKDIR /app
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --production
+COPY tsconfig.json ./
+COPY src ./src
+
+USER nextjs
+CMD ["bun", "src/bot/index.ts"]

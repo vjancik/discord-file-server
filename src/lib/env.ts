@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { parseBool, parseBytes, parseDuration } from "./units";
 
-const csv = z
+/** Comma-separated list env var (also used by the bot's env schema). */
+export const csv = z
   .string()
   .transform((s) =>
     s
@@ -80,6 +81,16 @@ const envSchema = z.object({
 
 export type Env = z.infer<typeof envSchema> & { baseUrl: string };
 
+/** Public base URL: BASE_URL override, else localhost in dev, else https://DOMAIN. */
+export function deriveBaseUrl(domain: string, override?: string): string {
+  return (
+    override ??
+    (process.env.NODE_ENV === "development"
+      ? "http://localhost:3000"
+      : `https://${domain}`)
+  );
+}
+
 let cached: Env | undefined;
 
 /**
@@ -96,12 +107,10 @@ export function getEnv(): Env {
       `Environment validation failed:\n${z.prettifyError(parsed.error)}`,
     );
   }
-  const baseUrl =
-    parsed.data.BASE_URL ??
-    (process.env.NODE_ENV === "development"
-      ? "http://localhost:3000"
-      : `https://${parsed.data.DOMAIN}`);
-  cached = { ...parsed.data, baseUrl };
+  cached = {
+    ...parsed.data,
+    baseUrl: deriveBaseUrl(parsed.data.DOMAIN, parsed.data.BASE_URL),
+  };
   return cached;
 }
 

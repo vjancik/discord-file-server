@@ -120,6 +120,8 @@ src/
     capacity/        staging ledger · disk probe (statfs) · upload admission (accept/wait/reject)
     cleanup/         staging GC + pressure eviction · expiry job
     container.ts     composition root — the only place real adapters are wired
+  bot/               Discord bot (separate process/container): /upload command ·
+                     admin-channel review (Approve/Reject) · poll/reconcile loop over the shared DB
   auth/              Better Auth config (Discord OAuth, guild-gate session hook) · DAL
   db/                Drizzle schema · generated auth schema · migrations · bun:sqlite client
   app/               routes: upload page, dashboard, settings, admin, /s/*, /f/* fallback, tus endpoint
@@ -166,7 +168,7 @@ Useful scripts: `typecheck`, `codecheck` / `codecheck:fix` (Biome), `test`, `tes
 
 ## Deployment
 
-Docker Compose runs three containers: the app (standalone Next.js build executed by Bun, with ffmpeg in the image), Caddy, and Litestream.
+Docker Compose runs four containers: the app (standalone Next.js build executed by Bun, with ffmpeg in the image), the Discord bot, Caddy, and Litestream.
 
 ```bash
 cp .env.example .env
@@ -180,6 +182,7 @@ Requirements:
 
 - DNS for `DOMAIN` pointing at the box, with ports 80/443 reachable — Caddy provisions and renews Let's Encrypt certificates automatically. (If 80/443 can't be exposed, switch the Caddyfile to a DNS-01 challenge via a Caddy DNS-provider module.)
 - The Discord OAuth app needs `https://<DOMAIN>/api/auth/callback/discord` registered as a redirect URL.
+- For the bot: set `DISCORD_BOT_TOKEN` and `ADMIN_CHANNEL_ID`, and invite the bot to the allowed guilds (OAuth2 URL with the `bot` + `applications.commands` scopes; it needs View Channel + Send Messages in the admin channel). No privileged gateway intents are required, and the connection is outbound-only — it also works behind the tunnel/CGNAT.
 - The four `HOST_*` directories must exist and be writable by uid 1001 (the app container's user).
 
 The volume topology mirrors the storage design:
@@ -247,6 +250,8 @@ The Cloudflare hostname config is untouched (still `caddy:80`); [Caddyfile.tunne
 | `STAGING_DIR` / `STORAGE_DIR` / `DATABASE_PATH` | ✔ | Data paths (fixed inside the containers; compose maps `HOST_*` onto them) |
 | `HOST_STORAGE_DIR` / `HOST_STAGING_DIR` / `HOST_DB_DIR` / `HOST_REPLICA_DIR` | compose | Host directories mounted into the containers (see volume table above); must be writable by uid 1001 |
 | `CLOUDFLARE_TUNNEL_TOKEN` | tunnel only | `cloudflared` connector token for the [beta overlays](#beta-over-a-cloudflare-tunnel) |
+| `DISCORD_BOT_TOKEN` | bot only | Bot token (same Discord application, Bot tab); enables the gateway connection |
+| `ADMIN_CHANNEL_ID` | bot only | Channel where pending uploads are posted with Approve/Reject buttons (usable by `ADMIN_DISCORD_IDS` only) |
 
 ## Design notes & trade-offs
 
