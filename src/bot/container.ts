@@ -3,9 +3,11 @@ import { createDb } from "@/db/client";
 import { FileRepository } from "@/server/files/file.repository";
 import { FileService } from "@/server/files/file.service";
 import { FileStorage } from "@/server/files/storage";
+import { QuotaService } from "@/server/quota/quota.service";
 import type { BotEnv } from "./env";
 import { DbIdentity } from "./identity";
 import { DiscordReviewMessenger } from "./messenger";
+import { QuotaSummaryService } from "./quota";
 import { ReviewService } from "./review.service";
 import { ReviewMessageRepository } from "./review-message.repository";
 
@@ -17,13 +19,23 @@ import { ReviewMessageRepository } from "./review-message.repository";
 export function createBotContainer(env: BotEnv, client: Client) {
   const db = createDb(env.DATABASE_PATH);
   const fileRepo = new FileRepository(db);
+  const identity = new DbIdentity(db);
   const review = new ReviewService(
     fileRepo,
     new FileService(fileRepo, new FileStorage(env.STORAGE_DIR)),
     new ReviewMessageRepository(db),
     new DiscordReviewMessenger(client, env.ADMIN_CHANNEL_ID),
-    new DbIdentity(db),
+    identity,
     { baseUrl: env.baseUrl, adminDiscordIds: env.ADMIN_DISCORD_IDS },
   );
-  return { db, review };
+  const quotaSummary = new QuotaSummaryService(
+    new QuotaService(fileRepo, {
+      storageLimit: env.STORAGE_LIMIT,
+      maxFileSize: env.MAX_FILE_SIZE,
+    }),
+    fileRepo,
+    identity,
+    env.baseUrl,
+  );
+  return { db, review, quotaSummary };
 }

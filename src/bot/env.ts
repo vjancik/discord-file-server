@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { csv, deriveBaseUrl } from "@/lib/env";
+import { bytes, csv, deriveBaseUrl } from "@/lib/env";
 
 /**
  * The bot's own env surface — deliberately smaller than the server's
@@ -19,6 +19,9 @@ const botEnvSchema = z.object({
   ALLOWED_GUILD_IDS: csv,
   DOMAIN: z.string().min(1),
   BASE_URL: z.url().optional(),
+  /** Same values the server uses — /quota computes with the server's quota math. */
+  STORAGE_LIMIT: bytes,
+  MAX_FILE_SIZE: bytes.optional(),
   DATABASE_PATH: z.string().min(1),
   /** Needed because reject-delete removes the file's bytes directly. */
   STORAGE_DIR: z.string().min(1),

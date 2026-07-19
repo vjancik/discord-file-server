@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { account } from "@/db/auth-schema";
 import type { Db } from "@/db/client";
 import { FileRepository } from "@/server/files/file.repository";
 import { FileService } from "@/server/files/file.service";
@@ -16,6 +15,7 @@ import {
   ReviewService,
 } from "./review.service";
 import { ReviewMessageRepository } from "./review-message.repository";
+import { linkDiscordAccount } from "./test-helpers";
 
 const ADMIN_DISCORD_ID = "111";
 const BASE_URL = "https://files.test";
@@ -48,19 +48,6 @@ let reviewRepo: ReviewMessageRepository;
 let messenger: FakeMessenger;
 let service: ReviewService;
 let alice: string;
-
-function linkDiscordAccount(userId: string, discordId: string): void {
-  db.insert(account)
-    .values({
-      id: `acc-${discordId}`,
-      accountId: discordId,
-      providerId: "discord",
-      userId,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .run();
-}
 
 beforeEach(() => {
   ({ db, cleanup } = createTestDb());
@@ -122,7 +109,7 @@ describe("tick — reconciling web-side changes", () => {
 
   test("attributes web deletions via the deleter's linked Discord account", async () => {
     const webAdmin = insertTestUser(db);
-    linkDiscordAccount(webAdmin, "999");
+    linkDiscordAccount(db, webAdmin, "999");
     const row = fileRepo.insert(testFileRow(alice));
     await service.tick();
     fileRepo.markDeleted(row.id, webAdmin);
@@ -189,7 +176,7 @@ describe("reject flow", () => {
   });
 
   test("confirm deletes bytes, tombstones with the admin's account, closes the message", async () => {
-    linkDiscordAccount(insertTestUser(db, "admin-user"), ADMIN_DISCORD_ID);
+    linkDiscordAccount(db, insertTestUser(db, "admin-user"), ADMIN_DISCORD_ID);
     const row = fileRepo.insert(testFileRow(alice));
     mkdirSync(path.join(storageDir, row.id), { recursive: true });
     await service.tick();

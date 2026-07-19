@@ -47,6 +47,13 @@ describe("quotaFor (divisor edge cases)", () => {
     repo.markDeleted(row.id, bob);
     expect(service(1000).quotaFor(alice)).toBe(1000);
   });
+
+  test("prospectiveQuota matches an inactive user's quota", () => {
+    repo.insert(testFileRow(bob, { sizeBytes: 10 }));
+    repo.insert(testFileRow(carol, { sizeBytes: 10 }));
+    expect(service(900).prospectiveQuota()).toBe(service(900).quotaFor(alice));
+    expect(service(900).prospectiveQuota()).toBe(300); // 2 active + newcomer
+  });
 });
 
 describe("planUpload", () => {

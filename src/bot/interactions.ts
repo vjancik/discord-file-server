@@ -6,6 +6,7 @@ import {
 import { createLogger } from "@/lib/logger";
 import { confirmRow } from "./components";
 import { parseReviewCustomId } from "./format";
+import type { QuotaSummaryService } from "./quota";
 import type { ButtonOutcome, ReviewService } from "./review.service";
 
 const log = createLogger("bot:interactions");
@@ -22,18 +23,23 @@ export function uploadReply(baseUrl: string): string {
  */
 export function createInteractionHandler(deps: {
   review: ReviewService;
+  quotaSummary: QuotaSummaryService;
   baseUrl: string;
 }): (interaction: Interaction) => Promise<void> {
   return async (interaction) => {
     try {
-      if (
-        interaction.isChatInputCommand() &&
-        interaction.commandName === "upload"
-      ) {
-        await interaction.reply({
-          content: uploadReply(deps.baseUrl),
-          flags: MessageFlags.Ephemeral,
-        });
+      if (interaction.isChatInputCommand()) {
+        if (interaction.commandName === "upload") {
+          await interaction.reply({
+            content: uploadReply(deps.baseUrl),
+            flags: MessageFlags.Ephemeral,
+          });
+        } else if (interaction.commandName === "quota") {
+          await interaction.reply({
+            content: deps.quotaSummary.summaryFor(interaction.user.id),
+            flags: MessageFlags.Ephemeral,
+          });
+        }
         return;
       }
       if (interaction.isButton()) await handleButton(interaction, deps.review);

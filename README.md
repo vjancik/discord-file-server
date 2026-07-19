@@ -120,7 +120,7 @@ src/
     capacity/        staging ledger · disk probe (statfs) · upload admission (accept/wait/reject)
     cleanup/         staging GC + pressure eviction · expiry job
     container.ts     composition root — the only place real adapters are wired
-  bot/               Discord bot (separate process/container): /upload command ·
+  bot/               Discord bot (separate process/container): /upload + /quota commands ·
                      admin-channel review (Approve/Reject) · poll/reconcile loop over the shared DB
   auth/              Better Auth config (Discord OAuth, guild-gate session hook) · DAL
   db/                Drizzle schema · generated auth schema · migrations · bun:sqlite client

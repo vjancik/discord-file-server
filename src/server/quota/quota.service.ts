@@ -30,8 +30,19 @@ export class QuotaService {
 
   /** Current quota for this user. A first upload makes them active, so the divisor counts them in. */
   quotaFor(userId: string): number {
+    return this.quotaWith(this.files.countLiveByOwner(userId) > 0);
+  }
+
+  /**
+   * Quota for someone holding no live files yet (a new or not-yet-registered
+   * user): they would join the divisor, so it's STORAGE_LIMIT / (active + 1).
+   */
+  prospectiveQuota(): number {
+    return this.quotaWith(false);
+  }
+
+  private quotaWith(isActive: boolean): number {
     const active = this.files.countActiveUsers();
-    const isActive = this.files.countLiveByOwner(userId) > 0;
     const divisor = Math.max(1, isActive ? active : active + 1);
     return Math.floor(this.config.storageLimit / divisor);
   }

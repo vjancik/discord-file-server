@@ -9,6 +9,10 @@ export const commandDefinitions = [
     .setName("upload")
     .setDescription("Get the link to the file upload server")
     .toJSON(),
+  new SlashCommandBuilder()
+    .setName("quota")
+    .setDescription("Check your storage quota on the upload server")
+    .toJSON(),
 ];
 
 /**

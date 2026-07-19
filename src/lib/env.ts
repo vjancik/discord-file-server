@@ -12,7 +12,8 @@ export const csv = z
   )
   .pipe(z.array(z.string()).min(1));
 
-const bytes = z.string().transform((s, ctx) => {
+/** Byte-size env var ("500GB", "2TiB", raw bytes; also used by the bot's env schema). */
+export const bytes = z.string().transform((s, ctx) => {
   try {
     return parseBytes(s);
   } catch (e) {
