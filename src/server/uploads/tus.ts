@@ -7,6 +7,7 @@ import { createLogger } from "@/lib/logger";
 import { getContainer } from "@/server/container";
 import { UploadRejectedError } from "@/server/files/finalize.service";
 import { classifyUpload } from "@/server/files/type-policy";
+import { verifyServiceToken } from "./service-token";
 import { SingleFlight } from "./single-flight";
 
 const log = createLogger("tus");
@@ -25,10 +26,30 @@ const reject = (status_code: number, body: string): TusError => ({
   body,
 });
 
-async function requireSessionUser(req: Request) {
+/**
+ * Who is uploading: a signed-in browser session, or the bot acting for a user
+ * via a service token (docs/embed-auth.md). Token requests carry the claims so
+ * onUploadCreate can consume the single-use jti and apply maxBytes.
+ */
+type UploadActor = {
+  id: string;
+  serviceToken?: { jti: string; exp: number; maxBytes?: number };
+};
+
+const SERVICE_TOKEN_HEADER = "x-service-token";
+
+async function requireUploadActor(req: Request): Promise<UploadActor> {
+  const token = req.headers.get(SERVICE_TOKEN_HEADER);
+  if (token !== null) {
+    const secrets = getEnv().BOT_SERVICE_SECRET;
+    const claims = secrets && verifyServiceToken(token, secrets);
+    if (!claims) throw reject(401, "Invalid or expired service token.");
+    const { userId, ...rest } = claims;
+    return { id: userId, serviceToken: rest };
+  }
   const session = await auth.api.getSession({ headers: req.headers });
   if (!session) throw reject(401, "Sign in to upload files.");
-  return session.user;
+  return { id: session.user.id };
 }
 
 /**
@@ -62,16 +83,21 @@ function createTusServer(): Server {
     generateUrl: (_req, { path, id }) => `${env.baseUrl}${path}/${id}`,
 
     async onIncomingRequest(req) {
-      await requireSessionUser(req);
+      await requireUploadActor(req);
     },
 
     async onUploadCreate(req, upload) {
-      const user = await requireSessionUser(req);
-      const { settingsRepo, quota, files, admission, stagingLedger } =
+      const user = await requireUploadActor(req);
+      const { settingsRepo, quota, files, admission, stagingLedger, jtis } =
         getContainer();
 
       if (!upload.size)
         throw reject(400, "Upload size must be known up front.");
+      if (
+        user.serviceToken?.maxBytes !== undefined &&
+        upload.size > user.serviceToken.maxBytes
+      )
+        throw reject(413, "Upload exceeds the service token's size cap.");
       const rawFileName = upload.metadata?.filename;
       if (!rawFileName) throw reject(400, "filename metadata is required.");
 
@@ -105,6 +131,15 @@ function createTusServer(): Server {
       if (decision.action === "wait") throw reject(429, decision.reason);
       if (decision.action === "reject") throw reject(413, decision.reason);
 
+      // Consume the single-use jti only after every gate passed: a 429 wait
+      // retry must not burn it. From here on the token cannot start another
+      // upload (docs/embed-auth.md).
+      if (user.serviceToken) {
+        const { jti, exp } = user.serviceToken;
+        if (!jtis.consume(jti, new Date(exp)))
+          throw reject(401, "Service token already used.");
+      }
+
       for (const old of plan.toDelete) {
         log.info(
           { fileId: old.id, userId: user.id },
@@ -122,7 +157,12 @@ function createTusServer(): Server {
     },
 
     async onUploadFinish(req, upload: Upload) {
-      const user = await requireSessionUser(req);
+      const user = await requireUploadActor(req);
+      // The upload belongs to whoever created it; a different actor (e.g. a
+      // second service token for another user) must not finalize it.
+      const ownerId = upload.metadata?.ownerId;
+      if (ownerId && ownerId !== user.id)
+        throw reject(403, "Upload belongs to a different user.");
 
       // The tus lock is released before this hook runs, so a retried final
       // PATCH can arrive while finalize is still in flight — single-flight

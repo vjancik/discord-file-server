@@ -37,9 +37,15 @@ services:
       STORAGE_DIR: /srv/uploads
       DATABASE_PATH: /srv/db/app.sqlite
       BASE_URL: https://${DOMAIN}
+      # /embed_video scratch lives on the same SSD as staging so free-space
+      # admission is naturally shared with web uploads (docs/embed-video.md).
+      EMBED_SCRATCH_DIR: /srv/embed-scratch
+      # Upload over the internal network, not the public edge.
+      UPLOAD_ENDPOINT: http://app:3000/api/upload
     volumes:
       - ${HOST_STORAGE_DIR}:/srv/uploads
       - ${HOST_DB_DIR}:/srv/db
+      - ${HOST_EMBED_SCRATCH_DIR:-./data/embed-scratch}:/srv/embed-scratch
     depends_on:
       - app
 

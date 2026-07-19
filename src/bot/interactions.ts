@@ -1,15 +1,21 @@
 import {
   type ButtonInteraction,
+  type ChatInputCommandInteraction,
   type Interaction,
   MessageFlags,
 } from "discord.js";
 import { createLogger } from "@/lib/logger";
 import { confirmRow } from "./components";
+import { DiscordEmbedUi } from "./embed/discord-ui";
+import type { EmbedService } from "./embed/embed.service";
 import { parseReviewCustomId } from "./format";
 import type { QuotaSummaryService } from "./quota";
 import type { ButtonOutcome, ReviewService } from "./review.service";
 
 const log = createLogger("bot:interactions");
+
+/** Per-user breather between /embed_video invocations (abuse limit). */
+const EMBED_COOLDOWN_MS = 30_000;
 
 export function uploadReply(baseUrl: string): string {
   // <> suppresses Discord's link preview — the reply is just a pointer.
@@ -25,7 +31,10 @@ export function createInteractionHandler(deps: {
   review: ReviewService;
   quotaSummary: QuotaSummaryService;
   baseUrl: string;
+  embed?: EmbedService;
 }): (interaction: Interaction) => Promise<void> {
+  const lastEmbedAt = new Map<string, number>();
+
   return async (interaction) => {
     try {
       if (interaction.isChatInputCommand()) {
@@ -39,15 +48,61 @@ export function createInteractionHandler(deps: {
             content: deps.quotaSummary.summaryFor(interaction.user.id),
             flags: MessageFlags.Ephemeral,
           });
+        } else if (interaction.commandName === "embed_video") {
+          await handleEmbedVideo(interaction, deps.embed, lastEmbedAt);
         }
         return;
       }
+      // Buttons: /embed_video dialogs run their own per-message collectors;
+      // only review buttons route through here (embed ids don't parse).
       if (interaction.isButton()) await handleButton(interaction, deps.review);
     } catch (err) {
       log.error({ err }, "interaction failed");
       await replyFailure(interaction);
     }
   };
+}
+
+async function handleEmbedVideo(
+  interaction: ChatInputCommandInteraction,
+  embed: EmbedService | undefined,
+  lastEmbedAt: Map<string, number>,
+): Promise<void> {
+  if (!embed) {
+    await interaction.reply({
+      content: "/embed_video isn't configured on this server.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  const now = Date.now();
+  const last = lastEmbedAt.get(interaction.user.id) ?? 0;
+  if (now - last < EMBED_COOLDOWN_MS) {
+    await interaction.reply({
+      content: "Give it a moment — you can start another download shortly.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  lastEmbedAt.set(interaction.user.id, now);
+
+  const url = interaction.options.getString("url", true);
+  // Public deferred reply: the whole point is sharing the result.
+  await interaction.deferReply();
+  const abort = new AbortController();
+  const ui = new DiscordEmbedUi(interaction, crypto.randomUUID(), abort);
+  // enqueue never rejects (errors are rendered into the reply); don't hold
+  // the gateway handler open for a multi-minute job.
+  void embed.enqueue(
+    url,
+    {
+      discordId: interaction.user.id,
+      username: interaction.user.username,
+      avatarUrl: interaction.user.displayAvatarURL(),
+    },
+    ui,
+    abort.signal,
+  );
 }
 
 async function handleButton(

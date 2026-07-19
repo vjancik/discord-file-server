@@ -10,6 +10,7 @@ import { FinalizeService } from "./files/finalize.service";
 import { FileStorage } from "./files/storage";
 import { FfmpegProber } from "./media/prober";
 import { QuotaService } from "./quota/quota.service";
+import { JtiRepository } from "./uploads/service-token";
 import { SettingsRepository } from "./users/settings.repository";
 
 /**
@@ -26,6 +27,7 @@ export interface Container {
   stagingLedger: StagingLedger;
   diskProbe: StatfsDiskProbe;
   admission: AdmissionService;
+  jtis: JtiRepository;
 }
 
 let cached: Container | undefined;
@@ -51,6 +53,7 @@ export function getContainer(): Container {
       defaultExpiryMs: env.DEFAULT_FILE_EXPIRY,
     }),
     files: new FileService(fileRepo, storage),
+    jtis: new JtiRepository(db),
     stagingLedger,
     diskProbe,
     admission: new AdmissionService(

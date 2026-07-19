@@ -73,6 +73,20 @@ const envSchema = z.object({
    */
   REQUIRE_EMAIL: bool,
   BETTER_AUTH_SECRET: z.string().min(1),
+  /**
+   * Secret(s) for bot-minted upload service tokens (docs/embed-auth.md).
+   * Comma-separated to allow zero-downtime rotation ("new,old"). Unset =
+   * token-authenticated uploads are disabled.
+   */
+  BOT_SERVICE_SECRET: csv.optional(),
+  /**
+   * Discord's inline-embed threshold (soft, ~100MB as of 2026). Videos above
+   * it get a thumbnail card instead of og:video player tags: Discord's media
+   * proxy tries to cache external videos and fails unpredictably past the
+   * limit, leaving the link with no embed at all — and the failure is cached,
+   * so the first crawl must get it right. Keep in sync with the bot's value.
+   */
+  EMBED_SIZE_LIMIT: bytes.prefault("80MB"),
   /** SSD directory for in-progress tus uploads. */
   STAGING_DIR: z.string().min(1),
   /** HDD-array directory for completed files (served by Caddy at /f/*). */

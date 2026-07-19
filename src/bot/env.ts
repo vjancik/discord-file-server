@@ -25,6 +25,23 @@ const botEnvSchema = z.object({
   DATABASE_PATH: z.string().min(1),
   /** Needed because reject-delete removes the file's bytes directly. */
   STORAGE_DIR: z.string().min(1),
+  /**
+   * Secret(s) shared with the server for upload service tokens
+   * (docs/embed-auth.md). Unset = /embed_video is not registered.
+   */
+  BOT_SERVICE_SECRET: csv.optional(),
+  /** Discord's inline-embed size threshold (docs/embed-video.md). */
+  EMBED_SIZE_LIMIT: bytes.prefault("80MB"),
+  /** SSD workspace for yt-dlp downloads; per-job subdirs, swept at boot. */
+  EMBED_SCRATCH_DIR: z.string().min(1).default("./.data/embed-scratch"),
+  /** Max bytes the scratch workspace may hold. */
+  EMBED_SCRATCH_LIMIT: bytes.prefault("10GB"),
+  /**
+   * Where the bot uploads to. Defaults to `${baseUrl}/api/upload`; in Docker
+   * set it to the app container directly (http://app:3000/api/upload) so
+   * uploads stay on the internal network instead of the public edge.
+   */
+  UPLOAD_ENDPOINT: z.url().optional(),
 });
 
 export type BotEnv = z.infer<typeof botEnvSchema> & { baseUrl: string };

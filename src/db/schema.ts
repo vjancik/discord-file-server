@@ -72,6 +72,18 @@ export const discordReviewMessages = sqliteTable("discord_review_messages", {
     .notNull(),
 });
 
+/**
+ * Single-use ids of accepted upload service tokens (docs/embed-auth.md).
+ * A jti is consumed when a token-authenticated tus upload is created; rows
+ * expire with the token and are pruned opportunistically on insert. Shared
+ * DB (not memory) so replay protection holds across app restarts and, later,
+ * multiple app nodes.
+ */
+export const serviceTokenJtis = sqliteTable("service_token_jtis", {
+  jti: text("jti").primaryKey(),
+  expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const userSettings = sqliteTable("user_settings", {
   userId: text("user_id")
     .primaryKey()

@@ -1,5 +1,11 @@
 import { relations, sql } from "drizzle-orm";
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+  index,
+  integer,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 
 export const user = sqliteTable("user", {
   id: text("id").primaryKey(),
@@ -66,7 +72,16 @@ export const account = sqliteTable(
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
   },
-  (table) => [index("account_userId_idx").on(table.userId)],
+  (table) => [
+    index("account_userId_idx").on(table.userId),
+    // One app user per provider identity. Better Auth implies this; making it
+    // a constraint lets the bot's provisionUser (docs/embed-auth.md) race a
+    // concurrent first web sign-in safely via insert-or-ignore.
+    uniqueIndex("account_provider_account_idx").on(
+      table.providerId,
+      table.accountId,
+    ),
+  ],
 );
 
 export const verification = sqliteTable(

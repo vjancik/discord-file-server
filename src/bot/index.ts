@@ -33,14 +33,20 @@ async function waitForMigrations(db: Db): Promise<void> {
 async function main(): Promise<void> {
   const env = getBotEnv();
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-  const { db, review, quotaSummary } = createBotContainer(env, client);
+  const { db, review, quotaSummary, embed } = createBotContainer(env, client);
 
   await waitForMigrations(db);
-  await registerCommands(env);
+  await registerCommands(env, { embedVideo: embed !== undefined });
+  embed?.sweepScratch();
 
   client.on(
     Events.InteractionCreate,
-    createInteractionHandler({ review, quotaSummary, baseUrl: env.baseUrl }),
+    createInteractionHandler({
+      review,
+      quotaSummary,
+      baseUrl: env.baseUrl,
+      embed,
+    }),
   );
   client.once(Events.ClientReady, (ready) => {
     log.info({ user: ready.user.tag }, "connected to Discord gateway");

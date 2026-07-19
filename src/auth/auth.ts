@@ -43,6 +43,10 @@ export const auth = betterAuth({
       mapProfileToUser: (profile) => ({
         email: profile.email ?? `${profile.id}@discord.placeholder.local`,
       }),
+      // Refresh name/image/email from Discord on every sign-in. Keeps
+      // bot-provisioned accounts (docs/embed-auth.md) current, and upgrades
+      // placeholder emails to real ones if REQUIRE_EMAIL is enabled later.
+      overrideUserInfoOnSignIn: true,
     },
   },
   emailAndPassword: { enabled: isE2ETestAuth },

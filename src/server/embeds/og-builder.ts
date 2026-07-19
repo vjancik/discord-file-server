@@ -44,11 +44,22 @@ export interface OgFileInput
  * (og:video / og:image / og:audio pointing at the raw file — Discord renders
  * an inline player); everything else gets a card whose title is the original
  * filename and whose link direct-downloads.
+ *
+ * Videos above `embedLimit` deliberately get the card treatment instead of
+ * player tags: Discord's media proxy must cache external videos to render a
+ * player, fails unpredictably above its soft limit, and caches the failure —
+ * an og:video tag there risks a permanently embedless link, while a thumbnail
+ * card always unfurls.
  */
-export function buildOgHtml(file: OgFileInput, baseUrl: string): string {
+export function buildOgHtml(
+  file: OgFileInput,
+  baseUrl: string,
+  embedLimit: number,
+): string {
   const canonical = canonicalUrl(baseUrl, file);
   const short = shortUrl(baseUrl, file);
   const thumb = thumbnailUrl(baseUrl, file);
+  const description = `${formatBytes(file.sizeBytes)} — uploaded by ${file.uploaderName}`;
 
   const common: Array<[string, string | null | undefined]> = [
     ["og:site_name", "DiscordFileServer"],
@@ -59,16 +70,24 @@ export function buildOgHtml(file: OgFileInput, baseUrl: string): string {
   let specific: Array<[string, string | null | undefined]>;
   switch (file.kind) {
     case "video":
-      specific = [
-        ["og:type", "video.other"],
-        ["og:video", canonical],
-        ["og:video:secure_url", canonical],
-        ["og:video:type", file.mimeType],
-        ["og:video:width", file.width?.toString()],
-        ["og:video:height", file.height?.toString()],
-        ["og:image", thumb],
-        ["twitter:card", "player"],
-      ];
+      specific =
+        file.sizeBytes > embedLimit
+          ? [
+              ["og:type", "website"],
+              ["og:description", description],
+              ["og:image", thumb],
+              ["twitter:card", thumb ? "summary_large_image" : "summary"],
+            ]
+          : [
+              ["og:type", "video.other"],
+              ["og:video", canonical],
+              ["og:video:secure_url", canonical],
+              ["og:video:type", file.mimeType],
+              ["og:video:width", file.width?.toString()],
+              ["og:video:height", file.height?.toString()],
+              ["og:image", thumb],
+              ["twitter:card", "player"],
+            ];
       break;
     case "image":
       specific = [
@@ -93,10 +112,7 @@ export function buildOgHtml(file: OgFileInput, baseUrl: string): string {
       // description; clicking through direct-downloads the file.
       specific = [
         ["og:type", "website"],
-        [
-          "og:description",
-          `${formatBytes(file.sizeBytes)} — uploaded by ${file.uploaderName}`,
-        ],
+        ["og:description", description],
         ["twitter:card", "summary"],
       ];
   }

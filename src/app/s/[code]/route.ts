@@ -15,7 +15,7 @@ export async function GET(
 ) {
   const { code } = await ctx.params;
   const { fileRepo } = getContainer();
-  const { baseUrl } = getEnv();
+  const { baseUrl, EMBED_SIZE_LIMIT } = getEnv();
 
   const file = fileRepo.findLiveByShortCode(code);
   if (!file || (file.expiresAt && file.expiresAt.getTime() < Date.now())) {
@@ -27,6 +27,7 @@ export async function GET(
     const html = buildOgHtml(
       { ...file, uploaderName: uploader ?? "unknown" },
       baseUrl,
+      EMBED_SIZE_LIMIT,
     );
     return new Response(html, {
       status: 200,

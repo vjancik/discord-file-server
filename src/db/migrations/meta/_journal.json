@@ -15,6 +15,13 @@
       "when": 1784386718156,
       "tag": "0001_tense_silvermane",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784457953173,
+      "tag": "0002_reflective_kate_bishop",
+      "breakpoints": true
     }
   ]
 }

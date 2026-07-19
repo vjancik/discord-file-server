@@ -120,8 +120,10 @@ src/
     capacity/        staging ledger · disk probe (statfs) · upload admission (accept/wait/reject)
     cleanup/         staging GC + pressure eviction · expiry job
     container.ts     composition root — the only place real adapters are wired
-  bot/               Discord bot (separate process/container): /upload + /quota commands ·
+  bot/               Discord bot (separate process/container): /upload + /quota + /embed_video ·
                      admin-channel review (Approve/Reject) · poll/reconcile loop over the shared DB
+    embed/           /embed_video pipeline: yt-dlp probe/download · format selection · scratch
+                     watchdog · ffprobe verify · tus client with service tokens (docs/embed-video.md)
   auth/              Better Auth config (Discord OAuth, guild-gate session hook) · DAL
   db/                Drizzle schema · generated auth schema · migrations · bun:sqlite client
   app/               routes: upload page, dashboard, settings, admin, /s/*, /f/* fallback, tus endpoint
@@ -183,6 +185,7 @@ Requirements:
 - DNS for `DOMAIN` pointing at the box, with ports 80/443 reachable — Caddy provisions and renews Let's Encrypt certificates automatically. (If 80/443 can't be exposed, switch the Caddyfile to a DNS-01 challenge via a Caddy DNS-provider module.)
 - The Discord OAuth app needs `https://<DOMAIN>/api/auth/callback/discord` registered as a redirect URL.
 - For the bot: set `DISCORD_BOT_TOKEN` and `ADMIN_CHANNEL_ID`, and invite the bot to the allowed guilds (OAuth2 URL with the `bot` + `applications.commands` scopes; it needs View Channel + Send Messages in the admin channel). No privileged gateway intents are required, and the connection is outbound-only — it also works behind the tunnel/CGNAT.
+- For `/embed_video`: additionally set `BOT_SERVICE_SECRET` (and optionally `HOST_EMBED_SCRATCH_DIR`, on the staging SSD). The bot needs View Channel + Send Messages in every channel where the command should work — long downloads switch from the interaction reply to a regular bot message after ~13 minutes. Without the secret the command simply isn't registered.
 - The four `HOST_*` directories must exist and be writable by uid 1001 (the app container's user).
 
 The volume topology mirrors the storage design:
@@ -248,10 +251,12 @@ The Cloudflare hostname config is untouched (still `caddy:80`); [Caddyfile.tunne
 | `REQUIRE_EMAIL` | — | Ask Discord for the user's email at sign-in (`true`/`false`, default off). The app never uses it — off keeps email off the OAuth consent screen and stores a placeholder |
 | `BETTER_AUTH_SECRET` | ✔ | Session signing secret (≥ 32 random bytes) |
 | `STAGING_DIR` / `STORAGE_DIR` / `DATABASE_PATH` | ✔ | Data paths (fixed inside the containers; compose maps `HOST_*` onto them) |
-| `HOST_STORAGE_DIR` / `HOST_STAGING_DIR` / `HOST_DB_DIR` / `HOST_REPLICA_DIR` | compose | Host directories mounted into the containers (see volume table above); must be writable by uid 1001 |
+| `HOST_STORAGE_DIR` / `HOST_STAGING_DIR` / `HOST_DB_DIR` / `HOST_REPLICA_DIR` / `HOST_EMBED_SCRATCH_DIR` | compose | Host directories mounted into the containers (see volume table above); must be writable by uid 1001 |
 | `CLOUDFLARE_TUNNEL_TOKEN` | tunnel only | `cloudflared` connector token for the [beta overlays](#beta-over-a-cloudflare-tunnel) |
 | `DISCORD_BOT_TOKEN` | bot only | Bot token (same Discord application, Bot tab); enables the gateway connection |
 | `ADMIN_CHANNEL_ID` | bot only | Channel where pending uploads are posted with Approve/Reject buttons (usable by `ADMIN_DISCORD_IDS` only) |
+| `BOT_SERVICE_SECRET` | app + bot | HMAC secret(s) for `/embed_video` upload service tokens ([docs/embed-auth.md](docs/embed-auth.md)); comma-separate `new,old` while rotating; unset disables the command |
+| `EMBED_SIZE_LIMIT` / `EMBED_SCRATCH_LIMIT` / `HOST_EMBED_SCRATCH_DIR` | bot only | `/embed_video` knobs: Discord's inline-embed threshold (default 80MB) · scratch byte cap (default 10GB) · host SSD dir mounted as scratch ([docs/embed-video.md](docs/embed-video.md)) |
 
 ## Design notes & trade-offs
 

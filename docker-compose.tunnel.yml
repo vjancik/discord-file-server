@@ -10,7 +10,7 @@
 #
 # Known constraint: Cloudflare's proxy caps request bodies at ~100 MB, so a
 # single tus PATCH above that fails — uploads bigger than 100 MB need a
-# sub-100MB `chunkSize` in the Uppy Tus options (see upload-panel.tsx).
+# sub-80MB `chunkSize` in the Uppy Tus options (see upload-panel.tsx).
 services:
   caddy:
     # Traffic only enters through the tunnel; drop the base file's 80/443
