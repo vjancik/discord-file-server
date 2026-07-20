@@ -3,8 +3,6 @@ import { getSession } from "@/auth/dal";
 import { AppIcon } from "@/components/app-icon";
 import { SignInButton } from "./sign-in-button";
 
-export const metadata = { title: "Sign in — Discord File Server" };
-
 export default async function LoginPage({
   searchParams,
 }: {
