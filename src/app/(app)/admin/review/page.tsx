@@ -4,7 +4,7 @@ import { toFileView } from "@/lib/file-view";
 import { getContainer } from "@/server/container";
 import { ReviewQueue } from "./review-queue";
 
-export const metadata = { title: "Review queue — DiscordFileServer" };
+export const metadata = { title: "Review queue — Discord File Server" };
 
 export default async function ReviewPage() {
   const admin = await requireAdmin();

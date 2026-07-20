@@ -1,6 +1,7 @@
 import { FolderOpen, Settings, ShieldCheck, Upload } from "lucide-react";
 import Link from "next/link";
 import { isAdmin, requireUser } from "@/auth/dal";
+import { AppIcon } from "@/components/app-icon";
 import { MobileNav } from "@/components/mobile-nav";
 import { SignOutButton } from "@/components/sign-out-button";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -17,8 +18,9 @@ export default async function AppLayout({
     <div className="flex min-h-screen flex-col">
       <header className="border-b">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-1 px-4">
-          <Link href="/" className="mr-4 font-semibold">
-            DiscordFileServer
+          <Link href="/" className="mr-4 flex items-center gap-2 font-semibold">
+            <AppIcon className="size-6" />
+            Discord File Server
           </Link>
           <nav className="hidden items-center gap-1 text-sm md:flex">
             <Link

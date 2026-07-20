@@ -1,4 +1,4 @@
-# DiscordFileServer
+# Discord File Server
 
 A self-hosted file sharing service built to get around Discord's upload limits. Members of an allowed Discord server sign in with Discord, upload large files through a resumable-upload UI, and get short links that unfurl properly when pasted back into Discord — inline video player with scrubbing, image previews, audio player — while the actual bytes are served straight off a homelab disk array, never touching the application runtime.
 

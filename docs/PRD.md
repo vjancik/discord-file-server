@@ -1,4 +1,4 @@
-# PRD — DiscordFileServer
+# PRD — Discord File Server
 
 A self-hosted file upload and sharing service for a Discord community, built to get around
 Discord's upload limits. Users authenticate with Discord, upload large files through a web UI,
@@ -334,7 +334,7 @@ What we do instead:
 | 8 | Docker Compose; standalone Next.js in a container; Bun as runtime. |
 | 9 | Audio embeds in scope for v1. |
 | 10 | Public-URL disclaimer added to Security model (§8). |
-| 11 | Name: **DiscordFileServer**. |
+| 11 | Name: **Discord File Server**. |
 
 ## Resolved decisions (iteration 2)
 

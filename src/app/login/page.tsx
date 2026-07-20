@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/auth/dal";
+import { AppIcon } from "@/components/app-icon";
 import { SignInButton } from "./sign-in-button";
 
-export const metadata = { title: "Sign in — DiscordFileServer" };
+export const metadata = { title: "Sign in — Discord File Server" };
 
 export default async function LoginPage({
   searchParams,
@@ -17,7 +18,8 @@ export default async function LoginPage({
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-8">
-      <h1 className="font-semibold text-2xl">DiscordFileServer</h1>
+      <AppIcon className="size-20" />
+      <h1 className="font-semibold text-2xl">Discord File Server</h1>
       <p className="max-w-sm text-center text-neutral-400">
         Share files with your Discord community without the upload limits.
       </p>

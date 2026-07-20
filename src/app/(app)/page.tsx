@@ -3,7 +3,7 @@ import { formatBytes } from "@/lib/units";
 import { getContainer } from "@/server/container";
 import { UploadPanel } from "./upload-panel";
 
-export const metadata = { title: "Upload — DiscordFileServer" };
+export const metadata = { title: "Upload — Discord File Server" };
 
 export default async function UploadPage() {
   const user = await requireUser();

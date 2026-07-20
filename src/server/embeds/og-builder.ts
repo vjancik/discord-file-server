@@ -62,7 +62,7 @@ export function buildOgHtml(
   const description = `${formatBytes(file.sizeBytes)} — uploaded by ${file.uploaderName}`;
 
   const common: Array<[string, string | null | undefined]> = [
-    ["og:site_name", "DiscordFileServer"],
+    ["og:site_name", "Discord File Server"],
     ["og:title", file.fileName],
     ["og:url", short],
   ];

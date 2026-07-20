@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "DiscordFileServer",
+  title: "Discord File Server",
   description:
     "Share files with your Discord community without the upload limits.",
 };

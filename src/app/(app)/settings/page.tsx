@@ -4,7 +4,7 @@ import { formatBytes } from "@/lib/units";
 import { getContainer } from "@/server/container";
 import { SettingsForm } from "./settings-form";
 
-export const metadata = { title: "Settings — DiscordFileServer" };
+export const metadata = { title: "Settings — Discord File Server" };
 
 export default async function SettingsPage() {
   const user = await requireUser();

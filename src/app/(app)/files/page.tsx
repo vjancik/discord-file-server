@@ -4,7 +4,7 @@ import { toFileView } from "@/lib/file-view";
 import { getContainer } from "@/server/container";
 import { FilesTable } from "./files-table";
 
-export const metadata = { title: "My files — DiscordFileServer" };
+export const metadata = { title: "My files — Discord File Server" };
 
 export default async function FilesPage() {
   const user = await requireUser();
