@@ -14,7 +14,7 @@ import {
 
 /**
  * ReviewMessenger over discord.js. Posts go to the fixed admin channel; the
- * link in the content unfurls into the upload server's own OG embed.
+ * link in the content renders into the upload server's own OG embed.
  */
 export class DiscordReviewMessenger implements ReviewMessenger {
   private channel: SendableChannels | undefined;

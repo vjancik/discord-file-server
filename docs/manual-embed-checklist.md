@@ -4,7 +4,7 @@ Automated tests cover link resolution and OG tags, but only Discord itself can
 verify how embeds render. Run through this once against the deployed instance
 (real domain + HTTPS — Discord won't fetch plain http or localhost).
 
-> Discord caches unfurls per URL server-side. When iterating on OG tags,
+> Discord caches embeds per URL server-side. When iterating on OG tags,
 > upload the file again to get a fresh short code instead of re-pasting the
 > same link (PRD §5).
 

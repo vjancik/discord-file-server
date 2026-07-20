@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { sanitizeYtDlpError } from "./errors";
 
 describe("sanitizeYtDlpError", () => {
-  test("wraps URLs in <> to suppress unfurls", () => {
+  test("wraps URLs in <> to suppress embeds", () => {
     const out = sanitizeYtDlpError(
       "ERROR: [generic] https://example.com/video?x=1 : oops",
     );

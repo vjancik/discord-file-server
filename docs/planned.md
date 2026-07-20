@@ -14,7 +14,7 @@ provisioning + upload service token).**
 
 One-line summary: `/embed_video url:<link>` downloads media with yt-dlp
 (remux only, never re-encode), uploads it through the public tus endpoint as
-the invoking user, and replies with the `/f/` link so Discord unfurls a
+the invoking user, and replies with the `/f/` link so Discord shows a
 playable embed — a universal embedder for most platforms yt-dlp supports.
 
 Still open (settle at implementation time):

@@ -5,7 +5,7 @@ import { canonicalUrl } from "@/server/links/urls";
 
 /**
  * Pure text for the admin-channel review messages. The link is the payload:
- * Discord unfurls it into the embed the upload server already serves via its
+ * Discord renders it into the embed the upload server already serves via its
  * OG tags, so the bot never builds embeds itself.
  */
 

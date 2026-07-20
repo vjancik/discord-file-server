@@ -11,7 +11,7 @@ and receive links that embed correctly (image/video/audio players) when pasted i
 ## 1. Goals
 
 - Let authorized Discord users upload files far beyond Discord's size limits.
-- Produce share links that unfurl/embed properly in Discord — inline video player, image
+- Produce share links that embed properly in Discord — inline video player, image
   preview, audio player — whether pasted as the short link or the canonical URL.
 - Give users a dashboard to view, share, and delete their own uploads.
 - Give admins a review queue and a global file browser with moderation actions.
@@ -176,7 +176,7 @@ Known platform constraints (accepted, not solvable on our side):
 
 - Playable **iframe** embeds (YouTube-style) are limited to Discord's hardcoded domain
   allowlist — not available to us. `og:video` → raw mp4 gives an inline player anyway.
-- Discord caches unfurls per URL server-side: iterate on OG tags with fresh short codes.
+- Discord caches embeds per URL server-side: iterate on OG tags with fresh short codes.
 - Very large media may not inline-preview in some clients even when the link works.
   **Test with a >500 MB video early.**
 - Deleting a file does not retract thumbnails already cached by Discord's media proxy.

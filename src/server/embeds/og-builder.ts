@@ -47,7 +47,7 @@ const CARD_DESCRIPTION_MAX_PARAGRAPHS = 3;
 /**
  * Source descriptions can be enormous (YouTube allows 5k chars); the card gets
  * the first 3 paragraphs or 280 chars, whichever is less — Discord truncates
- * unfurl descriptions itself not far past that. The watch page shows the full
+ * embed descriptions itself not far past that. The watch page shows the full
  * text. Trims at a word boundary and ellipsizes when anything was dropped.
  */
 export function trimCardDescription(text: string): string {
@@ -84,7 +84,7 @@ export function trimCardDescription(text: string): string {
  * player tags: Discord's media proxy must cache external videos to render a
  * player, fails unpredictably above its soft limit, and caches the failure —
  * an og:video tag there risks a permanently embedless link, while a thumbnail
- * card always unfurls.
+ * card always embeds.
  */
 export function buildOgHtml(
   file: OgFileInput,

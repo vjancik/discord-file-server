@@ -9,7 +9,7 @@ is implemented — see the last section.
 `/embed_video url:<link>` in an allowed guild. The bot downloads the media
 with yt-dlp, uploads it through the public tus endpoint as the invoking user
 (provisioning them if needed), and edits its reply to the `/f/` link so
-Discord unfurls a playable embed.
+Discord shows a playable embed.
 
 - The reply is **public** (the point is sharing) and deferred immediately.
 - **Every interactive button is invoker-only**: clicks from anyone else get an
@@ -181,7 +181,7 @@ the same SSD class: the copy into staging is SSD→SSD). Queued state shows
 unchanged; the file lands `pending` and the existing review announcer posts
 it to the admin channel — intended behavior.
 
-Final reply edit: the bare `/s/` short URL (embed unfurls from the server's
+Final reply edit: the bare `/s/` short URL (the embed renders from the server's
 OG tags; the short link is also where the metadata iteration will hang the
 title/description card). Scratch dir is deleted in a `finally`, plus an
 orphan sweep at bot startup (covers crashes mid-job; in-memory job state is
@@ -193,7 +193,7 @@ yt-dlp failures can't be enumerated — sanitize and pass through:
 
 1. Take the meaningful tail (`ERROR:` lines first, else last stderr lines),
    strip ANSI escapes.
-2. Wrap every URL in `<>` (suppresses unfurls).
+2. Wrap every URL in `<>` (suppresses embeds).
 3. Truncate to fit the reply. Note: Discord message **content** caps at
    2,000 characters (4,096 only applies to embed descriptions) — budget
    ~1,800 for the error body.
@@ -228,7 +228,7 @@ Embed files carry their source metadata end to end:
 - **OG card (`/s/<code>`):** `og:title` is the source title; `og:description`
   is the source description trimmed to the first 3 `\n+`-separated paragraphs
   or 280 chars, whichever is less (word-boundary cut + ellipsis — Discord
-  truncates unfurl descriptions itself around ~350 chars). Player-vs-thumbnail
+  truncates embed descriptions itself around ~350 chars). Player-vs-thumbnail
   logic unchanged. Note: Discord deliberately hides `og:description` when it
   renders an inline video player (same as YouTube links) — the description
   shows on thumbnail cards (over-limit videos) and on other platforms. The

@@ -1,7 +1,7 @@
 /**
  * yt-dlp failure output → a single safe Discord message chunk. We can't
  * enumerate yt-dlp's errors, so the contract is sanitize-and-passthrough:
- * ANSI stripped, URLs wrapped in <> (suppresses unfurls), truncated to fit
+ * ANSI stripped, URLs wrapped in <> (suppresses embeds), truncated to fit
  * Discord's 2,000-char content limit with room for our framing.
  */
 

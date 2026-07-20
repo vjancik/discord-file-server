@@ -14,7 +14,7 @@ const file = {
 };
 
 describe("review message content", () => {
-  test("announcement carries the canonical /f/ link for Discord to unfurl", () => {
+  test("announcement carries the canonical /f/ link for Discord to embed", () => {
     const content = announcementContent(file, "Alice", "https://files.test");
     expect(content).toContain("clip.mp4");
     expect(content).toContain("Alice");
