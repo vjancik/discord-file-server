@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM oven/bun:1.3-alpine AS base
+FROM oven/bun:1.3-slim AS base
 
 # ── Build ──────────────────────────────────────────────────────────────────────
 FROM base AS builder
@@ -13,35 +13,12 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN bun run build
 
-# ── Runtime ────────────────────────────────────────────────────────────────────
-FROM base AS runner
-# ffmpeg/ffprobe are shelled out to by the upload finalize hook
-RUN apk add --no-cache ffmpeg
-
-ENV NODE_ENV=production
-RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
-
-WORKDIR /app
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-# Migration .sql files are read at runtime (instrumentation.ts); standalone
-# file tracing doesn't pick them up, so copy them to the default MIGRATIONS_DIR
-# location (cwd-relative src/db/migrations).
-COPY --from=builder --chown=nextjs:nodejs /app/src/db/migrations ./src/db/migrations
-
-USER nextjs
-EXPOSE 3000
-ENV PORT=3000
-ENV HOSTNAME=0.0.0.0
-CMD ["bun", "server.js"]
-
-# ── Bot toolchain (static upstream builds) ─────────────────────────────────────
-# apk/alpine versions lag upstream; yt-dlp needs current releases for site
-# fixes and uses deno as its JS runtime (YouTube nsig). All three are
-# glibc-linked static builds, hence the slim (Debian) base for the bot stages.
+# ── Media/bot toolchain (static upstream builds) ───────────────────────────────
+# Debian/apk package versions lag upstream; yt-dlp needs current releases for
+# site fixes and uses deno as its JS runtime (YouTube nsig). All three are
+# glibc-linked static builds, hence the slim (Debian, glibc) base everywhere.
 # Bump the versions here (and in the cache ids) to upgrade.
-FROM oven/bun:1.3-slim AS bot-tools
+FROM base AS bot-tools
 ARG TARGETARCH
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates wget unzip xz-utils \
@@ -88,11 +65,35 @@ RUN --mount=type=cache,id=ffmpeg-n8-1-$TARGETARCH,target=/cache \
     && tar -xJf /cache/ffmpeg-n8.1.tar.xz --strip-components=2 -C /out \
         --wildcards "*/bin/ffmpeg" "*/bin/ffprobe"
 
+# ── Next.js web app ────────────────────────────────────────────────────────────
+FROM base AS web
+# ffmpeg/ffprobe are shelled out to by the upload finalize hook; same static
+# builds as the bot so both containers run identical ffmpeg versions.
+COPY --from=bot-tools /out/ffmpeg /out/ffprobe /usr/local/bin/
+
+ENV NODE_ENV=production
+RUN groupadd -g 1001 nodejs && useradd -m -u 1001 -g nodejs nextjs
+
+WORKDIR /app
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+# Migration .sql files are read at runtime (instrumentation.ts); standalone
+# file tracing doesn't pick them up, so copy them to the default MIGRATIONS_DIR
+# location (cwd-relative src/db/migrations).
+COPY --from=builder --chown=nextjs:nodejs /app/src/db/migrations ./src/db/migrations
+
+USER nextjs
+EXPOSE 3000
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+CMD ["bun", "server.js"]
+
 # ── Discord bot ────────────────────────────────────────────────────────────────
 # Separate process/container sharing the SQLite DB and storage mount with the
 # app. No build step: Bun runs the TypeScript directly (tsconfig.json is
 # needed at runtime for the @/* path aliases).
-FROM oven/bun:1.3-slim AS bot
+FROM base AS bot
 ENV NODE_ENV=production
 RUN groupadd -g 1001 nodejs && useradd -m -u 1001 -g nodejs nextjs
 COPY --from=bot-tools /out/yt-dlp /out/deno /out/ffmpeg /out/ffprobe /usr/local/bin/

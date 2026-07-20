@@ -9,7 +9,7 @@ services:
   app:
     build:
       context: .
-      target: runner
+      target: web
     restart: unless-stopped
     env_file: .env
     environment:
