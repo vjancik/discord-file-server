@@ -18,6 +18,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 /**
  * Delete with confirmation dialog + global "don't show this again" opt-out
@@ -50,15 +55,20 @@ export function DeleteFileButton({
 
   return (
     <>
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label={`Delete ${fileName}`}
-        disabled={pending}
-        onClick={() => (skipConfirm ? doDelete() : setOpen(true))}
-      >
-        <Trash2 className="text-destructive" />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Delete ${fileName}`}
+            disabled={pending}
+            onClick={() => (skipConfirm ? doDelete() : setOpen(true))}
+          >
+            <Trash2 className="text-destructive" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Delete</TooltipContent>
+      </Tooltip>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

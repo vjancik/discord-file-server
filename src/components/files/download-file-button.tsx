@@ -1,5 +1,10 @@
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { FileView } from "@/lib/file-view";
 
 /**
@@ -9,14 +14,19 @@ import type { FileView } from "@/lib/file-view";
  */
 export function DownloadFileButton({ file }: { file: FileView }) {
   return (
-    <Button variant="ghost" size="icon" asChild>
-      <a
-        href={file.canonicalUrl}
-        download={file.fileName}
-        aria-label={`Download ${file.fileName}`}
-      >
-        <Download />
-      </a>
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button variant="ghost" size="icon" asChild>
+          <a
+            href={file.canonicalUrl}
+            download={file.fileName}
+            aria-label={`Download ${file.fileName}`}
+          >
+            <Download />
+          </a>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Download</TooltipContent>
+    </Tooltip>
   );
 }

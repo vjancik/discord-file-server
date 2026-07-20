@@ -240,7 +240,12 @@ Embed files carry their source metadata end to end:
   not) and the app's `max-w-6xl` frame. Layout, YouTube-style: inline player
   (poster = thumbnail) → title → left-aligned button row (`Short URL` /
   `File URL` copy buttons — the raw `/f/` URL is otherwise unreachable for
-  embed files — and `Original URL` external link) → full untrimmed
-  description in a muted card, newlines preserved, long URLs wrapped
-  (`wrap-anywhere`). Public and noindexed, same liveness rules as `/s/`;
-  `/v/` of a non-embed file redirects to the raw file.
+  embed files — `Download`, and `Original URL` external link) → full
+  untrimmed description in a muted card, newlines preserved, long URLs
+  wrapped (`wrap-anywhere`). Public and noindexed, same liveness rules as
+  `/s/`; `/v/` of a non-embed file redirects to the raw file.
+- **Dashboard preview:** the files-table preview dialog renders the same
+  `WatchView` component as `/v/` for files with an `embed_sources` row
+  (plus a "Full View" link to the page); plain uploads keep the bare media
+  preview. The watch layout lives only in
+  `src/components/files/watch-view.tsx`.

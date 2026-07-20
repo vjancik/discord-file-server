@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { type EmbedSourceRow, embedSources } from "@/db/schema";
 
@@ -48,5 +48,20 @@ export class EmbedSourceRepository {
       .from(embedSources)
       .where(eq(embedSources.fileId, fileId))
       .get();
+  }
+
+  /** Batch lookup for file listings, chunked to stay under SQLite's bind-parameter limit. */
+  getMany(fileIds: string[]): Map<string, EmbedSourceRow> {
+    const byFileId = new Map<string, EmbedSourceRow>();
+    for (let i = 0; i < fileIds.length; i += 500) {
+      const chunk = fileIds.slice(i, i + 500);
+      const rows = this.db
+        .select()
+        .from(embedSources)
+        .where(inArray(embedSources.fileId, chunk))
+        .all();
+      for (const row of rows) byFileId.set(row.fileId, row);
+    }
+    return byFileId;
   }
 }

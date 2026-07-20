@@ -8,12 +8,12 @@ export const metadata = { title: "All files — Discord File Server" };
 
 export default async function AdminFilesPage() {
   const admin = await requireAdmin();
-  const { fileRepo, settingsRepo } = getContainer();
+  const { fileRepo, settingsRepo, embedSources } = getContainer();
   const { baseUrl } = getEnv();
 
-  const files = (await fileRepo.listAllWithOwner()).map((f) =>
-    toFileView(f, baseUrl),
-  );
+  const rows = await fileRepo.listAllWithOwner();
+  const sources = embedSources.getMany(rows.map((f) => f.id));
+  const files = rows.map((f) => toFileView(f, baseUrl, sources.get(f.id)));
   const { skipDeleteConfirm } = settingsRepo.get(admin.id);
 
   return (

@@ -6,7 +6,9 @@ import type * as React from "react";
 import { cn } from "@/lib/utils";
 
 function TooltipProvider({
-  delayDuration = 0,
+  // Browser-title-like delay: hints shouldn't flash during mass mouse
+  // traffic over icon buttons, only on a deliberate hover.
+  delayDuration = 700,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
   return (
@@ -21,7 +23,11 @@ function TooltipProvider({
 function Tooltip({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
-  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />;
+  return (
+    <TooltipProvider>
+      <TooltipPrimitive.Root data-slot="tooltip" {...props} />
+    </TooltipProvider>
+  );
 }
 
 function TooltipTrigger({

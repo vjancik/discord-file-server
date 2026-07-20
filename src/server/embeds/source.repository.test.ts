@@ -73,4 +73,12 @@ describe("EmbedSourceRepository", () => {
   test("get returns undefined for files without metadata", () => {
     expect(repo.get("missing")).toBeUndefined();
   });
+
+  test("getMany returns only files that have metadata, keyed by file id", () => {
+    repo.save(fileId, input());
+    const map = repo.getMany([fileId, "no-metadata"]);
+    expect(map.size).toBe(1);
+    expect(map.get(fileId)?.title).toBe("A Video");
+    expect(repo.getMany([]).size).toBe(0);
+  });
 });

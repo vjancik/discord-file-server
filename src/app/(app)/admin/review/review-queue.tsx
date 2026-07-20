@@ -64,7 +64,10 @@ export function ReviewQueue({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        <ul className="flex max-h-[70vh] flex-col gap-1 overflow-y-auto rounded-md border p-2">
+        {/* min-w-0 on both panes: without it the selected video's intrinsic
+            width sets the single mobile column's min-content and the whole
+            grid overflows the viewport. */}
+        <ul className="flex max-h-[70vh] min-w-0 flex-col gap-1 overflow-y-auto rounded-md border p-2">
           {files.map((file) => (
             <li key={file.id} className="flex items-center gap-2">
               <Checkbox
@@ -88,7 +91,7 @@ export function ReviewQueue({
                 )}
               >
                 <KindIcon kind={file.kind} />
-                <span className="min-w-0 flex-1 truncate" title={file.fileName}>
+                <span className="min-w-0 flex-1 wrap-anywhere">
                   {file.fileName}
                 </span>
                 <span className="shrink-0 text-muted-foreground text-xs">
@@ -99,29 +102,30 @@ export function ReviewQueue({
           ))}
         </ul>
 
-        <div className="flex flex-col gap-3 rounded-md border p-4">
+        <div className="flex min-w-0 flex-col gap-3 rounded-md border p-4">
           {selected ? (
             <>
-              <div className="flex items-center gap-2">
-                <h2
-                  className="min-w-0 flex-1 truncate font-medium"
-                  title={selected.fileName}
-                >
+              {/* Stacked on phones — beside a long wrapped title the buttons
+                  get squeezed; inline again from sm up. */}
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <h2 className="min-w-0 wrap-anywhere font-medium sm:flex-1">
                   {selected.fileName}
                 </h2>
-                <Button
-                  size="sm"
-                  disabled={pending}
-                  onClick={() => approve([selected.id])}
-                >
-                  <Check /> Approve
-                </Button>
-                <DownloadFileButton file={selected} />
-                <DeleteFileButton
-                  fileId={selected.id}
-                  fileName={selected.fileName}
-                  skipConfirm={skipConfirm}
-                />
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    size="sm"
+                    disabled={pending}
+                    onClick={() => approve([selected.id])}
+                  >
+                    <Check /> Approve
+                  </Button>
+                  <DownloadFileButton file={selected} />
+                  <DeleteFileButton
+                    fileId={selected.id}
+                    fileName={selected.fileName}
+                    skipConfirm={skipConfirm}
+                  />
+                </div>
               </div>
               <p className="text-muted-foreground text-sm">
                 {selected.ownerName} · {selected.mimeType} ·{" "}

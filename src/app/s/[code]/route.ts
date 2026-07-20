@@ -2,7 +2,7 @@ import { getEnv } from "@/lib/env";
 import { getContainer } from "@/server/container";
 import { buildOgHtml } from "@/server/embeds/og-builder";
 import { isEmbedCrawler } from "@/server/embeds/ua";
-import { canonicalUrl } from "@/server/links/urls";
+import { canonicalUrl, watchUrl } from "@/server/links/urls";
 
 /**
  * Short-link resolution (PRD §4/§5): embed crawlers receive an OG-tagged HTML
@@ -41,6 +41,6 @@ export async function GET(
     });
   }
 
-  if (source) return Response.redirect(`${baseUrl}/v/${file.shortCode}`, 302);
+  if (source) return Response.redirect(watchUrl(baseUrl, file), 302);
   return Response.redirect(canonicalUrl(baseUrl, file), 302);
 }

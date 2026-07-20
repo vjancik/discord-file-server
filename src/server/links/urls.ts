@@ -15,6 +15,14 @@ export function shortUrl(
   return `${baseUrl}/s/${file.shortCode}`;
 }
 
+/** Watch page for /embed_video files — human destination of /s links with source metadata. */
+export function watchUrl(
+  baseUrl: string,
+  file: Pick<FileRow, "shortCode">,
+): string {
+  return `${baseUrl}/v/${file.shortCode}`;
+}
+
 /** Thumbnail lives alongside the file, so Caddy serves it from the same /f/ dir. */
 export function thumbnailUrl(
   baseUrl: string,
