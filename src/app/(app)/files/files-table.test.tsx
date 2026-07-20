@@ -59,4 +59,10 @@ test("renders rows with name, size, status, and actions", () => {
   expect(
     screen.getByRole("button", { name: /preview photo\.png/i }),
   ).toBeTruthy();
+
+  const download = screen.getByRole("link", {
+    name: /download clip\.mp4/i,
+  }) as HTMLAnchorElement;
+  expect(download.href).toBe("http://localhost/f/abc/clip.mp4");
+  expect(download.getAttribute("download")).toBe("clip.mp4");
 });

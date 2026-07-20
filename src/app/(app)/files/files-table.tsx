@@ -16,6 +16,7 @@ import { ArrowUpDown } from "lucide-react";
 import { useMemo, useState } from "react";
 import { CopyButton } from "@/components/copy-button";
 import { DeleteFileButton } from "@/components/files/delete-file-button";
+import { DownloadFileButton } from "@/components/files/download-file-button";
 import {
   DateCell,
   StatusBadge,
@@ -111,6 +112,7 @@ export function FilesTable({
           <div className="flex items-center justify-end gap-1">
             <CopyButton value={row.original.shortUrl} label="Link" />
             <PreviewDialog file={row.original} />
+            <DownloadFileButton file={row.original} />
             <DeleteFileButton
               fileId={row.original.id}
               fileName={row.original.fileName}

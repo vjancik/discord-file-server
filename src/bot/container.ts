@@ -1,5 +1,6 @@
 import type { Client } from "discord.js";
-import { createDb } from "@/db/client";
+import { createDb, type Db } from "@/db/client";
+import { EmbedSourceRepository } from "@/server/embeds/source.repository";
 import { FileRepository } from "@/server/files/file.repository";
 import { FileService } from "@/server/files/file.service";
 import { FileStorage } from "@/server/files/storage";
@@ -46,13 +47,14 @@ export function createBotContainer(env: BotEnv, client: Client) {
     identity,
     env.baseUrl,
   );
-  const embed = createEmbedService(env, identity, quota);
+  const embed = createEmbedService(env, db, identity, quota);
   return { db, review, quotaSummary, embed };
 }
 
 /** /embed_video needs the shared service secret; without it, no command. */
 function createEmbedService(
   env: BotEnv,
+  db: Db,
   identity: DbIdentity,
   quota: QuotaService,
 ): EmbedService | undefined {
@@ -64,6 +66,7 @@ function createEmbedService(
       ytdlp: new YtDlp(),
       verifier: new EmbedVerifier(),
       upload: (opts) => tusUpload({ ...opts, endpoint }),
+      sources: new EmbedSourceRepository(db),
       identity,
       quota,
       mintToken: (userId, maxBytes) =>

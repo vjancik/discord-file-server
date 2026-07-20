@@ -81,6 +81,7 @@ let deps: EmbedServiceDeps;
 let ui: FakeUi;
 let downloads: DownloadRequest[];
 let uploads: Parameters<EmbedServiceDeps["upload"]>[0][];
+let savedSources: Array<{ fileId: string } & Record<string, unknown>>;
 let probeInfo: ProbeInfo;
 let check: EmbedCheck;
 let quota: { quotaFor: number; usageFor: number };
@@ -90,6 +91,7 @@ beforeEach(() => {
   ui = new FakeUi();
   downloads = [];
   uploads = [];
+  savedSources = [];
   probeInfo = smallInfo();
   check = { sizeBytes: 31 * MB, container: "mp4", embeddable: true };
   quota = { quotaFor: 1000 * MB, usageFor: 0 };
@@ -113,6 +115,9 @@ beforeEach(() => {
         shortUrl: "https://files.test/s/a",
         canonicalUrl: "https://files.test/f/f1/x.mp4",
       };
+    },
+    sources: {
+      save: (fileId, input) => savedSources.push({ fileId, ...input }),
     },
     identity: { provisionUser: () => "user-1" },
     quota: {
@@ -153,6 +158,69 @@ describe("EmbedService flow", () => {
     expect(ui.finished).toBe("https://files.test/s/a");
     // markdown scrubbed from the title
     expect(ui.asks[0].text).not.toContain("*Video*");
+  });
+
+  test("successful upload saves the raw probe metadata for the watch page", async () => {
+    probeInfo = smallInfo({
+      description: "  A classic.\n\nSubscribe!  ",
+      webpage_url: "https://x.test/watch?v=1",
+      view_count: 1_299_168,
+      timestamp: 1_779_321_600, // 2026-05-21T00:00:00Z
+      formats: probeInfo.formats?.filter((f) => f.format_id !== "137"),
+    });
+    await service().enqueue("https://x.test/v", INVOKER, ui);
+    expect(savedSources).toEqual([
+      {
+        fileId: "f1",
+        title: "My *Video*", // raw title, not the markdown-scrubbed one
+        description: "A classic.\n\nSubscribe!",
+        sourceUrl: "https://x.test/watch?v=1",
+        viewCount: 1_299_168,
+        uploadedAt: new Date("2026-05-21T00:00:00Z"),
+      },
+    ]);
+    expect(ui.finished).toContain("/s/a");
+  });
+
+  test("missing optional probe fields fall back to nulls and the input url", async () => {
+    probeInfo = smallInfo({
+      formats: probeInfo.formats?.filter((f) => f.format_id !== "137"),
+    });
+    await service().enqueue("https://x.test/v", INVOKER, ui);
+    expect(savedSources[0]).toMatchObject({
+      description: null,
+      sourceUrl: "https://x.test/v",
+      viewCount: null,
+      uploadedAt: null,
+    });
+  });
+
+  test("upload_date YYYYMMDD is used when no exact timestamp exists", async () => {
+    probeInfo = smallInfo({
+      upload_date: "20260517",
+      formats: probeInfo.formats?.filter((f) => f.format_id !== "137"),
+    });
+    await service().enqueue("https://x.test/v", INVOKER, ui);
+    expect(savedSources[0].uploadedAt).toEqual(
+      new Date("2026-05-17T00:00:00Z"),
+    );
+  });
+
+  test("a failed metadata save still delivers the link", async () => {
+    deps.sources.save = () => {
+      throw new Error("db locked");
+    };
+    probeInfo = smallInfo({
+      formats: probeInfo.formats?.filter((f) => f.format_id !== "137"),
+    });
+    await service().enqueue("https://x.test/v", INVOKER, ui);
+    expect(ui.finished).toContain("/s/a");
+  });
+
+  test("cancelled or failed jobs save no metadata", async () => {
+    ui.answers = []; // choose dialogue times out
+    await service().enqueue("https://x.test/v", INVOKER, ui);
+    expect(savedSources).toHaveLength(0);
   });
 
   test("fits: no dialogue, straight to download", async () => {

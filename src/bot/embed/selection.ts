@@ -25,6 +25,14 @@ export type ProbeFormat = {
 export type ProbeInfo = {
   id?: string;
   title?: string;
+  description?: string | null;
+  /** Canonical page URL as resolved by the extractor. */
+  webpage_url?: string;
+  view_count?: number | null;
+  /** Publish time, epoch seconds; more precise than upload_date when present. */
+  timestamp?: number | null;
+  /** Publish date as YYYYMMDD. */
+  upload_date?: string | null;
   duration?: number | null;
   is_live?: boolean | null;
   _type?: string;

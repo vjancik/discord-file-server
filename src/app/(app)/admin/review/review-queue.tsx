@@ -4,6 +4,7 @@ import { Check } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { DeleteFileButton } from "@/components/files/delete-file-button";
+import { DownloadFileButton } from "@/components/files/download-file-button";
 import { DateCell, KindIcon } from "@/components/files/file-cells";
 import { FilePreview } from "@/components/files/preview-dialog";
 import { Button } from "@/components/ui/button";
@@ -115,6 +116,7 @@ export function ReviewQueue({
                 >
                   <Check /> Approve
                 </Button>
+                <DownloadFileButton file={selected} />
                 <DeleteFileButton
                   fileId={selected.id}
                   fileName={selected.fileName}

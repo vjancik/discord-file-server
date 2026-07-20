@@ -93,7 +93,10 @@ export class YtDlp {
       "after_move:filepath",
       sidecar,
       "-o",
-      path.join(req.dir, "%(title).200B [%(id)s].%(ext)s"),
+      // .NB truncates to N UTF-8 bytes on a character boundary. Budget:
+      // 180 title + 2 + 32 id + 1 + ~5 ext + yt-dlp's transient ".fNNN.part"
+      // suffixes stays under the 255-byte NAME_MAX per path component.
+      path.join(req.dir, "%(title).180B [%(id).32B].%(ext)s"),
       "--",
       req.url,
     ];

@@ -17,9 +17,9 @@
     "format": "biome format --write",
     "prod:up": "docker compose up --build -d",
     "prod:down": "docker compose down",
-    "beta:up": "docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up --build -d",
-    "beta:dev": "docker compose -f docker-compose.yml -f docker-compose.tunnel.yml -f docker-compose.tunnel.dev.yml up -d caddy cloudflared && concurrently -n web,bot -c blue,magenta \"bun run dev\" \"bun run bot:dev\"",
-    "beta:down": "docker compose -f docker-compose.yml -f docker-compose.tunnel.yml down"
+    "tunnel:up": "docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up --build -d",
+    "tunnel:dev": "docker compose -f docker-compose.yml -f docker-compose.tunnel.yml -f docker-compose.tunnel.dev.yml up -d caddy cloudflared && concurrently -n web,bot -c blue,magenta \"bun run dev\" \"bun run bot:dev\"",
+    "tunnel:down": "docker compose -f docker-compose.yml -f docker-compose.tunnel.yml down"
   },
   "dependencies": {
     "@tanstack/react-table": "^8.21.3",

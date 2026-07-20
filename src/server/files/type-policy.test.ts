@@ -124,8 +124,18 @@ describe("sanitizeFileName", () => {
   test("caps length while preserving the extension", () => {
     const long = `${"a".repeat(300)}.mp4`;
     const out = sanitizeFileName(long);
-    expect(out.length).toBeLessThanOrEqual(180);
+    expect(Buffer.byteLength(out, "utf8")).toBeLessThanOrEqual(200);
     expect(out.endsWith(".mp4")).toBe(true);
+  });
+
+  test("caps multibyte names by UTF-8 bytes, not characters", () => {
+    // 200 CJK chars = 600 UTF-8 bytes: over NAME_MAX (255) despite being
+    // well under the old 180-character cap.
+    const long = `${"日".repeat(200)}.mp4`;
+    const out = sanitizeFileName(long);
+    expect(Buffer.byteLength(out, "utf8")).toBeLessThanOrEqual(200);
+    expect(out.endsWith(".mp4")).toBe(true);
+    expect(out).toMatch(/^日+\.mp4$/); // no split code points
   });
 
   test("never returns an empty name", () => {

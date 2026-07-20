@@ -37,6 +37,41 @@ export interface OgFileInput
     | "thumbnailPath"
   > {
   uploaderName: string;
+  /** /embed_video source metadata; when present the card carries the real title. */
+  source?: { title: string; description: string | null };
+}
+
+const CARD_DESCRIPTION_MAX_CHARS = 280;
+const CARD_DESCRIPTION_MAX_PARAGRAPHS = 3;
+
+/**
+ * Source descriptions can be enormous (YouTube allows 5k chars); the card gets
+ * the first 3 paragraphs or 280 chars, whichever is less — Discord truncates
+ * unfurl descriptions itself not far past that. The watch page shows the full
+ * text. Trims at a word boundary and ellipsizes when anything was dropped.
+ */
+export function trimCardDescription(text: string): string {
+  const paragraphs = text
+    .split(/\n+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  let out = paragraphs.slice(0, CARD_DESCRIPTION_MAX_PARAGRAPHS).join("\n");
+  let cut = paragraphs.length > CARD_DESCRIPTION_MAX_PARAGRAPHS;
+  if (out.length > CARD_DESCRIPTION_MAX_CHARS) {
+    const sliced = out.slice(0, CARD_DESCRIPTION_MAX_CHARS);
+    const boundary = Math.max(
+      sliced.lastIndexOf(" "),
+      sliced.lastIndexOf("\n"),
+    );
+    // Keep a mid-token cut over losing most of the text to one long token.
+    out = (
+      boundary > CARD_DESCRIPTION_MAX_CHARS / 2
+        ? sliced.slice(0, boundary)
+        : sliced
+    ).trimEnd();
+    cut = true;
+  }
+  return cut ? `${out}…` : out;
 }
 
 /**
@@ -59,11 +94,13 @@ export function buildOgHtml(
   const canonical = canonicalUrl(baseUrl, file);
   const short = shortUrl(baseUrl, file);
   const thumb = thumbnailUrl(baseUrl, file);
-  const description = `${formatBytes(file.sizeBytes)} — uploaded by ${file.uploaderName}`;
+  const description = file.source?.description
+    ? trimCardDescription(file.source.description)
+    : `${formatBytes(file.sizeBytes)} — uploaded by ${file.uploaderName}`;
 
   const common: Array<[string, string | null | undefined]> = [
     ["og:site_name", "Discord File Server"],
-    ["og:title", file.fileName],
+    ["og:title", file.source?.title ?? file.fileName],
     ["og:url", short],
   ];
 
@@ -80,6 +117,7 @@ export function buildOgHtml(
             ]
           : [
               ["og:type", "video.other"],
+              ["og:description", file.source ? description : null],
               ["og:video", canonical],
               ["og:video:secure_url", canonical],
               ["og:video:type", file.mimeType],
@@ -117,7 +155,7 @@ export function buildOgHtml(
       ];
   }
 
-  const title = escapeHtml(file.fileName);
+  const title = escapeHtml(file.source?.title ?? file.fileName);
   return `<!doctype html>
 <html>
 <head>

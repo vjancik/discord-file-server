@@ -111,6 +111,27 @@ export async function sniffExecutable(head: Uint8Array): Promise<boolean> {
   return BLOCKED_SNIFFED.has(sniffed.ext);
 }
 
+/**
+ * The length cap is in UTF-8 bytes, not characters: Linux NAME_MAX is 255
+ * bytes per path component, and macOS/Windows clients can legitimately send
+ * 255-character names that encode to ~765 bytes. 200 leaves headroom.
+ */
+const MAX_NAME_BYTES = 200;
+
+const utf8Bytes = (s: string) => Buffer.byteLength(s, "utf8");
+
+/** Longest prefix of `s` that fits in `maxBytes` of UTF-8, whole code points only. */
+function truncateUtf8(s: string, maxBytes: number): string {
+  let bytes = 0;
+  let end = 0;
+  for (const cp of s) {
+    bytes += utf8Bytes(cp);
+    if (bytes > maxBytes) break;
+    end += cp.length;
+  }
+  return s.slice(0, end);
+}
+
 /** Safe-for-disk-and-URL filename: strips path tricks, keeps the extension. */
 export function sanitizeFileName(raw: string): string {
   const base = raw.split(/[/\\]/).pop() ?? "";
@@ -121,10 +142,13 @@ export function sanitizeFileName(raw: string): string {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/^\.+/, "");
-  if (name.length > 180) {
+  if (utf8Bytes(name) > MAX_NAME_BYTES) {
     const ext = extensionOf(name);
-    const keep = ext ? 180 - ext.length - 1 : 180;
-    name = ext ? `${name.slice(0, keep)}.${ext}` : name.slice(0, 180);
+    const keep = MAX_NAME_BYTES - utf8Bytes(ext) - 1;
+    name =
+      ext && keep >= 1
+        ? `${truncateUtf8(name.slice(0, -(ext.length + 1)), keep)}.${ext}`
+        : truncateUtf8(name, MAX_NAME_BYTES);
   }
   return name || "file";
 }

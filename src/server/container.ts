@@ -4,6 +4,7 @@ import { AdmissionService } from "./capacity/admission.service";
 import { StatfsDiskProbe } from "./capacity/disk";
 import { StagingLedger } from "./capacity/staging-ledger";
 import { evictStagingUnderPressure } from "./cleanup/staging-gc";
+import { EmbedSourceRepository } from "./embeds/source.repository";
 import { FileRepository } from "./files/file.repository";
 import { FileService } from "./files/file.service";
 import { FinalizeService } from "./files/finalize.service";
@@ -19,6 +20,7 @@ import { SettingsRepository } from "./users/settings.repository";
  */
 export interface Container {
   fileRepo: FileRepository;
+  embedSources: EmbedSourceRepository;
   settingsRepo: SettingsRepository;
   storage: FileStorage;
   quota: QuotaService;
@@ -43,6 +45,7 @@ export function getContainer(): Container {
   const diskProbe = new StatfsDiskProbe();
   cached = {
     fileRepo,
+    embedSources: new EmbedSourceRepository(db),
     settingsRepo,
     storage,
     quota: new QuotaService(fileRepo, {

@@ -10,6 +10,7 @@ import {
 import path from "node:path";
 import { createLogger } from "@/lib/logger";
 import { formatBytes } from "@/lib/units";
+import type { EmbedSourceInput } from "@/server/embeds/source.repository";
 import type { DiscordProfile } from "../identity";
 import { type Candidate, type ProbeInfo, planEmbed } from "./selection";
 import {
@@ -63,6 +64,8 @@ export type EmbedServiceDeps = {
   };
   verifier: { verify(filePath: string, limit: number): Promise<EmbedCheck> };
   upload: UploadFn;
+  /** Persists source title/description/URL for the /s card and /v watch page. */
+  sources: { save(fileId: string, input: EmbedSourceInput): void };
   identity: { provisionUser(profile: DiscordProfile): string };
   quota: { quotaFor(userId: string): number; usageFor(userId: string): number };
   mintToken: (userId: string, maxBytes: number) => string;
@@ -235,11 +238,21 @@ export class EmbedService {
     )
       return;
 
+    // Raw (unscrubbed) probe metadata for the /s card and /v watch page; the
+    // scrubbed title is only for Discord message text.
+    const source: EmbedSourceInput = {
+      title: info.title?.trim() || title,
+      description: info.description?.trim() || null,
+      sourceUrl: info.webpage_url ?? url,
+      viewCount: info.view_count ?? null,
+      uploadedAt: probeUploadDate(info),
+    };
+
     const jobDir = path.join(this.opts.scratchDir, crypto.randomUUID());
     mkdirSync(jobDir, { recursive: true });
     try {
       await this.download(
-        { url, title, choice, jobDir, perFileCap, userId, warned },
+        { url, title, choice, jobDir, perFileCap, userId, warned, source },
         ui,
         signal,
       );
@@ -377,6 +390,7 @@ export class EmbedService {
       perFileCap: number;
       userId: string;
       warned: "over-limit" | "unknown" | "none";
+      source: EmbedSourceInput;
     },
     ui: EmbedUi,
     signal?: AbortSignal,
@@ -470,8 +484,16 @@ export class EmbedService {
           void ui.status(`⏳ **${title}** — waiting for staging space…`),
         signal,
       });
-      // The short link, not /f/: it's the one that will carry the video
-      // title/description card in the metadata iteration (docs/planned.md).
+      // Saved before the reply goes out so a crawler unfurling the link never
+      // races the metadata write. A failed save must not eat the link — the
+      // upload already succeeded; the card just falls back to the filename.
+      try {
+        this.deps.sources.save(result.fileId, job.source);
+      } catch (err) {
+        log.warn({ err, fileId: result.fileId }, "saving embed source failed");
+      }
+      // The short link, not /f/: it carries the title/description card and
+      // routes humans to the /v watch page.
       await ui.finish(`${result.shortUrl}${embedNote}`);
     } catch (err) {
       if (err instanceof UploadCancelledError)
@@ -481,6 +503,16 @@ export class EmbedService {
       throw err;
     }
   }
+}
+
+/** Publish date from the probe: exact `timestamp` first, else YYYYMMDD `upload_date`. */
+function probeUploadDate(info: ProbeInfo): Date | null {
+  if (typeof info.timestamp === "number" && info.timestamp > 0)
+    return new Date(info.timestamp * 1000);
+  const m = /^(\d{4})(\d{2})(\d{2})$/.exec(info.upload_date ?? "");
+  return m
+    ? new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
+    : null;
 }
 
 function progressLine(title: string, p: DownloadProgress): string {

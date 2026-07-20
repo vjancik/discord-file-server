@@ -23,16 +23,3 @@ Still open (settle at implementation time):
   share-and-forget) — maybe an `EMBED_FILE_EXPIRY` env var.
 - **Review noise:** embedded uploads land `pending` and show in the admin
   review channel like everything else. Probably fine; revisit if noisy.
-
-## `/embed_video` second iteration — metadata & watch page
-
-After the core download + upload flow is proven correct:
-
-- Store source metadata for `/embed_video` files in the DB: title,
-  description, and the external source URL (all available from the yt-dlp
-  probe JSON already fetched in phase 1).
-- Show it with the embed: the card's link goes to a web page with the title,
-  description, an inline player, and a link back to the external source.
-- Implies a `files`-adjacent table (or nullable columns) plus a small public
-  page route; OG tags for embed files can then carry the real title instead
-  of the filename.

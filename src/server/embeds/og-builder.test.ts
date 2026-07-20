@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { buildOgHtml, type OgFileInput } from "./og-builder";
+import {
+  buildOgHtml,
+  type OgFileInput,
+  trimCardDescription,
+} from "./og-builder";
 
 const BASE = "https://files.example.com";
 const LIMIT = 80_000_000;
@@ -122,6 +126,54 @@ describe("buildOgHtml", () => {
     expect(html).not.toContain("og:video");
   });
 
+  test("embed source: title and trimmed description replace filename card text", () => {
+    const html = buildOgHtml(
+      input({
+        source: {
+          title: "Never Gonna Give You Up",
+          description: "A classic.\nSubscribe!",
+        },
+      }),
+      BASE,
+      LIMIT,
+    );
+    expect(html).toContain(
+      '<meta property="og:title" content="Never Gonna Give You Up">',
+    );
+    expect(html).toContain(
+      '<meta property="og:description" content="A classic.\nSubscribe!">',
+    );
+    expect(html).toContain("og:video"); // player tags stay on the source card
+    expect(html).toContain("<title>Never Gonna Give You Up</title>");
+  });
+
+  test("embed source without a description falls back to size + uploader", () => {
+    const html = buildOgHtml(
+      input({ source: { title: "Untitled", description: null } }),
+      BASE,
+      LIMIT,
+    );
+    expect(html).toContain(
+      '<meta property="og:description" content="12.5 MB — uploaded by vix">',
+    );
+  });
+
+  test("over-limit video with source keeps the thumbnail card, source text", () => {
+    const html = buildOgHtml(
+      input({
+        sizeBytes: 96_000_000,
+        source: { title: "Big One", description: "Long video." },
+      }),
+      BASE,
+      LIMIT,
+    );
+    expect(html).not.toContain("og:video");
+    expect(html).toContain('<meta property="og:title" content="Big One">');
+    expect(html).toContain(
+      '<meta property="og:description" content="Long video.">',
+    );
+  });
+
   test("escapes HTML in filenames and uploader names", () => {
     const html = buildOgHtml(
       input({
@@ -135,5 +187,36 @@ describe("buildOgHtml", () => {
     expect(html).not.toContain("<script>");
     expect(html).toContain("a&quot;b&lt;script&gt;.zip");
     expect(html).toContain("&lt;img&gt;");
+  });
+});
+
+describe("trimCardDescription", () => {
+  test("short text passes through untouched", () => {
+    expect(trimCardDescription("Just a video.")).toBe("Just a video.");
+  });
+
+  test("keeps at most 3 paragraphs and ellipsizes", () => {
+    expect(trimCardDescription("one\ntwo\n\n\nthree\nfour")).toBe(
+      "one\ntwo\nthree…",
+    );
+  });
+
+  test("caps at 280 chars on a word boundary with ellipsis", () => {
+    const words = Array.from({ length: 100 }, (_, i) => `word${i}`).join(" ");
+    const out = trimCardDescription(words);
+    expect(out.length).toBeLessThanOrEqual(281);
+    expect(out.endsWith("…")).toBe(true);
+    // No mid-word cut: everything before the ellipsis is a whole word.
+    expect(words.startsWith(out.slice(0, -1))).toBe(true);
+    expect(words.charAt(out.length - 1)).toBe(" ");
+  });
+
+  test("hard-cuts a single overlong token instead of returning nothing", () => {
+    const out = trimCardDescription("x".repeat(400));
+    expect(out).toBe(`${"x".repeat(280)}…`);
+  });
+
+  test("blank-line-only input yields empty string", () => {
+    expect(trimCardDescription("\n\n  \n")).toBe("");
   });
 });

@@ -1,7 +1,7 @@
 # Cloudflare Tunnel overlay for beta testing behind CGNAT. Run on top of the
 # base file:
 #   docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d --build
-# (or `bun run beta:up`).
+# (or `bun run tunnel:up`).
 #
 # TLS terminates at Cloudflare's edge; cloudflared dials out from the compose
 # bridge network and forwards requests to Caddy, so no host ports are

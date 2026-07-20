@@ -2,7 +2,7 @@
 
 Status: **finalized, ready to implement.** Auth/provisioning design lives in
 [embed-auth.md](embed-auth.md). The second iteration (metadata + watch page)
-is tracked in [planned.md](planned.md) and is out of scope here.
+is implemented — see the last section.
 
 ## Command & scope
 
@@ -211,3 +211,36 @@ the sanitized passthrough.
 - Same user re-invoking while a job runs → cooldown + queue position message.
 - Bot restart mid-job → orphaned scratch swept at boot; reply goes stale
   (accepted for v1).
+
+## Second iteration — metadata & watch page (implemented)
+
+Embed files carry their source metadata end to end:
+
+- **Storage:** `embed_sources` table (fileId PK → files, cascades with the
+  row): raw probe `title`, `description` (nullable), `webpage_url` (falls
+  back to the invoked URL), plus nullable `view_count` and `uploaded_at`
+  (probe `timestamp`, else `upload_date`) shown YouTube-style on the watch
+  page when present. Written by the bot **directly into the
+  shared SQLite DB** right after the tus upload finalizes, *before* the reply
+  is posted — so a crawler unfurling the fresh link never races the metadata.
+  A failed save is logged and never eats the link (card degrades to the
+  filename). Web uploads have no row and keep first-iteration behavior.
+- **OG card (`/s/<code>`):** `og:title` is the source title; `og:description`
+  is the source description trimmed to the first 3 `\n+`-separated paragraphs
+  or 280 chars, whichever is less (word-boundary cut + ellipsis — Discord
+  truncates unfurl descriptions itself around ~350 chars). Player-vs-thumbnail
+  logic unchanged. Note: Discord deliberately hides `og:description` when it
+  renders an inline video player (same as YouTube links) — the description
+  shows on thumbnail cards (over-limit videos) and on other platforms. The
+  only known workaround is undocumented Discord behavior; investigated and
+  written down in [mastodon-trick.md](mastodon-trick.md), not adopted.
+- **Watch page (`/v/<code>`):** human visitors to `/s/` of an embed file are
+  302'd here instead of the raw file. Wears the shared site header
+  (`SiteHeader`: full nav when signed in, Sign in button + theme toggle when
+  not) and the app's `max-w-6xl` frame. Layout, YouTube-style: inline player
+  (poster = thumbnail) → title → left-aligned button row (`Short URL` /
+  `File URL` copy buttons — the raw `/f/` URL is otherwise unreachable for
+  embed files — and `Original URL` external link) → full untrimmed
+  description in a muted card, newlines preserved, long URLs wrapped
+  (`wrap-anywhere`). Public and noindexed, same liveness rules as `/s/`;
+  `/v/` of a non-embed file redirects to the raw file.

@@ -159,7 +159,7 @@ Discord OAuth setup: create an application at the [Discord developer portal](htt
 
 In dev (`NODE_ENV=development`) the link base defaults to `http://localhost:3000`, so `BASE_URL` can stay unset; data lands in the local `./.data/*` paths from `.env`. Everything else in the [configuration reference](#configuration-reference) applies to all environments.
 
-Useful scripts: `typecheck`, `codecheck` / `codecheck:fix` (Biome), `test`, `test:e2e`, `prod:up` / `prod:down`, `beta:up` / `beta:dev` / `beta:down` (see [beta](#beta-over-a-cloudflare-tunnel)).
+Useful scripts: `typecheck`, `codecheck` / `codecheck:fix` (Biome), `test`, `test:e2e`, `prod:up` / `prod:down`, `tunnel:up` / `tunnel:dev` / `tunnel:down` (see [beta](#beta-over-a-cloudflare-tunnel)).
 
 ## Testing
 
@@ -220,7 +220,7 @@ One-time setup:
 
 4. `mkdir -p data/beta/{uploads,staging,db,replica} && sudo chown -R 1001:1001 data/beta`
 
-Then `bun run beta:up` (build + start; check `cloudflared` logs for `Registered tunnel connection`) and `bun run beta:down` to stop. Cloudflare's proxy caps request bodies at ~100 MB, which is why the Uppy tus client chunks uploads at 90 MiB — uploads of any size work through the tunnel, just slower than a direct connection.
+Then `bun run tunnel:up` (build + start; check `cloudflared` logs for `Registered tunnel connection`) and `bun run tunnel:down` to stop. Cloudflare's proxy caps request bodies at ~100 MB, which is why the Uppy tus client chunks uploads at 90 MiB — uploads of any size work through the tunnel, just slower than a direct connection.
 
 ### Dev server through the tunnel
 
@@ -230,7 +230,7 @@ For iterating against the real domain (unminified React errors, HMR, no image re
 # .env: keep the beta DOMAIN/token, and additionally set
 BASE_URL=https://beta.example.com   # dev mode otherwise mints localhost links
 
-bun run beta:dev   # starts only caddy + cloudflared, then `next dev` on the host
+bun run tunnel:dev   # starts only caddy + cloudflared, then `next dev` on the host
 ```
 
 The Cloudflare hostname config is untouched (still `caddy:80`); [Caddyfile.tunnel.dev](Caddyfile.tunnel.dev) proxies everything — including `/f/*`, via the dev fallback route — to `host.docker.internal:3000`, and `allowedDevOrigins` in [next.config.ts](next.config.ts) lets the domain reach dev-only assets. Note this mode uses the *local dev* data paths (`./.data/*`, your user), not the container stack's `./data/beta/*` (uid 1001) — the two worlds stay isolated, so expect a fresh sign-in when switching, and comment `BASE_URL` back out for plain local dev.

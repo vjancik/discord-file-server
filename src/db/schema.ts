@@ -56,6 +56,26 @@ export const files = sqliteTable(
 );
 
 /**
+ * Source metadata for files created by the bot's /embed_video command
+ * (docs/embed-video.md, second iteration): the yt-dlp probe's title,
+ * description and canonical page URL. Written by the bot right after the tus
+ * upload finalizes; read by the /s OG page and the /v watch page. Files
+ * uploaded through the web UI have no row here.
+ */
+export const embedSources = sqliteTable("embed_sources", {
+  fileId: text("file_id")
+    .primaryKey()
+    .references(() => files.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  sourceUrl: text("source_url").notNull(),
+  /** Source view count at embed time; null when the platform doesn't expose one. */
+  viewCount: integer("view_count"),
+  /** Source publish date; null when unknown. */
+  uploadedAt: integer("uploaded_at", { mode: "timestamp_ms" }),
+});
+
+/**
  * Open admin-review announcements posted to Discord by the bot process
  * (src/bot). One row per pending file whose message awaits an Approve/Reject
  * decision; rows are deleted once resolved (the Discord message itself is the
@@ -106,3 +126,4 @@ export const filesRelations = relations(files, ({ one }) => ({
 export type FileRow = typeof files.$inferSelect;
 export type NewFileRow = typeof files.$inferInsert;
 export type UserSettingsRow = typeof userSettings.$inferSelect;
+export type EmbedSourceRow = typeof embedSources.$inferSelect;
