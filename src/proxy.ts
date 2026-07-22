@@ -4,7 +4,7 @@ import { type NextRequest, NextResponse } from "next/server";
 /**
  * Optimistic redirect layer only (cookie presence, no DB hit) — real
  * authorization happens in the DAL (src/auth/dal.ts) and the tus hooks.
- * Public routes (/s/*, /f/*, /v/*, /api/*) are excluded via the matcher.
+ * Public routes (/s/*, /s_beta/*, /f/*, /v/*, /api/*) are excluded via the matcher.
  */
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -26,6 +26,6 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!api|_next/static|_next/image|s/|f/|v/|favicon\\.ico|icon\\.svg|og\\.png|robots\\.txt).*)",
+    "/((?!api|_next/static|_next/image|s/|s_beta/|f/|v/|favicon\\.ico|icon\\.svg|og\\.png|robots\\.txt).*)",
   ],
 };

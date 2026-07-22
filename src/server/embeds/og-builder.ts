@@ -2,7 +2,7 @@ import type { FileRow } from "@/db/schema";
 import { formatBytes } from "@/lib/units";
 import { canonicalUrl, shortUrl, thumbnailUrl } from "../links/urls";
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")

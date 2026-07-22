@@ -1,8 +1,14 @@
 # The Mastodon trick — description + footer + video player in one Discord embed
 
-Status: **investigated, not implemented.** We're staying on documented OG
-behavior for now; this file preserves the findings (verified live 2026-07-20
-against fxtwitter) so the route can be picked up later without re-discovery.
+Status: **implemented on the `mastodon_trick` branch, tested live 2026-07-22,
+not adopted.** The trick works (Discord renders the Mastodon-style embed) but
+does **not** lift the file-size ceiling — large files still fail to embed, so
+the size limit is enforced by Discord's media proxy when it fetches the video
+bytes, independent of which embed pipeline (OG or Mastodon) produced the card.
+That kills the one benefit that would have justified relying on undocumented
+behavior. Findings below (verified live 2026-07-20 against fxtwitter) kept for
+re-discovery; implementation lives in `src/server/embeds/mastodon.ts` plus the
+`/s_beta/[code]` and `/api/v1/statuses/[code]` routes on that branch.
 
 ## The problem it solves
 

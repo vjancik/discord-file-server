@@ -10,3 +10,11 @@ const CRAWLER_PATTERN =
 export function isEmbedCrawler(userAgent: string | null): boolean {
   return userAgent !== null && CRAWLER_PATTERN.test(userAgent);
 }
+
+/**
+ * Discord specifically — the /s_beta Mastodon-trick page is emitted only for
+ * Discordbot (mirroring FxEmbed); other crawlers keep the plain OG page.
+ */
+export function isDiscordCrawler(userAgent: string | null): boolean {
+  return userAgent !== null && /discordbot/i.test(userAgent);
+}
