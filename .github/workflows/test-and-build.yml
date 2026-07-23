@@ -67,6 +67,12 @@ jobs:
       - name: Install dependencies
         run: bun ci
 
+      # The upload finalize hook shells out to ffprobe/ffmpeg; runners don't
+      # ship them. apt's ffmpeg is likely older than the pinned static builds
+      # in the production image (Dockerfile bot-tools stage) — fine for e2e.
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
       - name: Install Playwright Chromium
         run: bunx playwright install --with-deps chromium
 

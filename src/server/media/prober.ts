@@ -25,18 +25,25 @@ export interface MediaProber {
 const log = createLogger("prober");
 
 async function run(cmd: string[]): Promise<{ ok: boolean; stdout: string }> {
-  const proc = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  if (exitCode !== 0)
-    log.warn(
-      { cmd: cmd[0], exitCode, stderr: stderr.slice(0, 500) },
-      "command failed",
-    );
-  return { ok: exitCode === 0, stdout };
+  try {
+    const proc = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    if (exitCode !== 0)
+      log.warn(
+        { cmd: cmd[0], exitCode, stderr: stderr.slice(0, 500) },
+        "command failed",
+      );
+    return { ok: exitCode === 0, stdout };
+  } catch (err) {
+    // A missing binary (ENOENT) degrades like a failed run — metadata-less
+    // publish instead of a crashed finalize.
+    log.warn({ cmd: cmd[0], err }, "command unavailable");
+    return { ok: false, stdout: "" };
+  }
 }
 
 /** Real adapter shelling out to ffprobe/ffmpeg (present in the Docker image). */
