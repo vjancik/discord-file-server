@@ -2,6 +2,10 @@
 
 A self-hosted file sharing service built to get around Discord's upload limits. Members of an allowed Discord server sign in with Discord, upload large files through a resumable-upload UI, and get short links that embed properly when pasted back into Discord: an inline video player with scrubbing, and image previews. Files are served directly off disk, so the JS runtime stays out of the way of large downloads and the whole thing runs comfortably on a single machine at home.
 
+As a bonus, the bot command `/embed_video` enables downloading videos from social media URLs (with `yt-dlp`), uploading them to your file server storage directly and returning back an embeddable short URL.
+
+![Demo](assets/demo.webp)
+
 ## Contents
 
 - [Features](#features)
@@ -293,7 +297,6 @@ Deeper write-ups live in [docs/](docs/):
 - [embed-auth.md](docs/embed-auth.md): the service-token design that lets the bot upload to the app on a user's behalf.
 - [mastodon-trick.md](docs/mastodon-trick.md): investigated-but-unused findings on combining a description, footer, and video player in one embed.
 - [manual-embed-checklist.md](docs/manual-embed-checklist.md): the manual pass covering what only Discord itself can verify (real embed rendering, ops smoke checks).
-- [planned.md](docs/planned.md): agreed-upon features not yet scheduled.
 
 ## Current limitations
 

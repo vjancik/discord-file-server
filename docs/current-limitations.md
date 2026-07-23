@@ -56,7 +56,7 @@ project. Ordered lists within each section are roughly by severity.
 ## Embed fidelity (Discord-side ceilings, confirmed in beta 2026-07)
 
 - [ ] **No embed renditions for oversized video or audio.** Confirmed against
-      live Discord: videos above ~500 MB embed as a card without a player
+      live Discord: videos above ~100 MB embed as a card without a player
       (Discord's media pipeline declines large files; threshold undocumented),
       and `og:audio` is ignored entirely — external links never get an audio
       player, only native uploads do. Both are fixable with upload-time
