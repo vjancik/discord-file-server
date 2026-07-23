@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import { createLogger } from "@/lib/logger";
 import { sanitizeYtDlpError } from "./errors";
@@ -48,6 +48,23 @@ export type DownloadRequest = {
 const PROGRESS_PREFIX = "EMBEDPROG";
 const FILEPATH_SIDECAR = ".final-filepath";
 
+/** Outcome of a `yt-dlp --update` run. */
+export type UpdateResult =
+  /** A newer release was installed; a retry may now succeed. */
+  | { changed: true; message: string }
+  /** Already current, or the update could not be performed. `changed` stays
+   *  false so callers never retry a download on the strength of a no-op. */
+  | { changed: false; message: string };
+
+/**
+ * `--update` prints "yt-dlp is up to date (<version>)" on a no-op and something
+ * like "Updating to ..." / "Updated yt-dlp to ..." when it replaces the binary.
+ * It exits 0 in both cases, so we key off the text, treating anything that
+ * isn't an explicit up-to-date/failure as a real change worth retrying on.
+ */
+const UP_TO_DATE = /is up to date/i;
+const UPDATE_FAILED = /ERROR|Unable to (write|rename)|not writable|Permission/i;
+
 const num = (s: string | undefined): number | undefined => {
   const n = Number(s);
   return Number.isFinite(n) && n >= 0 ? n : undefined;
@@ -74,8 +91,65 @@ export class YtDlp {
     }
   }
 
-  /** Downloads into `req.dir` and resolves with the final media file path. */
+  /**
+   * Runs `yt-dlp --update` in place. Best-effort: never throws — a failed
+   * self-update (offline, read-only binary, GitHub down) must not take down the
+   * caller, which either just wants a fresh binary at boot or is already
+   * handling a download failure. Returns whether the binary actually changed.
+   */
+  async update(): Promise<UpdateResult> {
+    let result: Awaited<ReturnType<typeof this.run>>;
+    try {
+      result = await this.run(["--update"], {});
+    } catch (err) {
+      log.warn({ err }, "yt-dlp --update could not be spawned");
+      return { changed: false, message: String(err) };
+    }
+    const message = (result.stdout + result.stderr).trim();
+    const changed =
+      result.code === 0 &&
+      !UP_TO_DATE.test(message) &&
+      !UPDATE_FAILED.test(message);
+    if (changed) log.info({ message }, "yt-dlp updated");
+    else log.info({ message, code: result.code }, "yt-dlp not updated");
+    return { changed, message };
+  }
+
+  /**
+   * Downloads into `req.dir` and resolves with the final media file path. On a
+   * yt-dlp failure (not an abort/cancel) makes one `--update` attempt and, if it
+   * actually pulled a newer binary, retries the download once — yt-dlp breaks
+   * against site changes constantly and the fix is almost always a fresh
+   * release. `dir` is wiped between attempts so the retry starts clean.
+   */
   async download(req: DownloadRequest): Promise<{ filePath: string }> {
+    try {
+      return await this.downloadOnce(req);
+    } catch (err) {
+      if (err instanceof DownloadAbortedError) throw err;
+      if (req.signal?.aborted) throw err;
+      const { changed } = await this.update();
+      if (!changed) throw err;
+      log.info("retrying download after yt-dlp update");
+      this.resetDir(req.dir);
+      return await this.downloadOnce(req);
+    }
+  }
+
+  /** Removes everything under `dir` (partials, sidecar) but keeps `dir`. */
+  private resetDir(dir: string): void {
+    try {
+      for (const entry of readdirSync(dir)) {
+        rmSync(path.join(dir, entry), { recursive: true, force: true });
+      }
+    } catch (err) {
+      log.warn({ err, dir }, "failed to reset job dir before retry");
+    }
+  }
+
+  private async downloadOnce(req: DownloadRequest): Promise<{
+    filePath: string;
+  }> {
     const sidecar = path.join(req.dir, FILEPATH_SIDECAR);
     const args = [
       "--no-playlist",

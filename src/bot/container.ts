@@ -47,8 +47,11 @@ export function createBotContainer(env: BotEnv, client: Client) {
     identity,
     env.baseUrl,
   );
-  const embed = createEmbedService(env, db, identity, quota);
-  return { db, review, quotaSummary, embed };
+  // Shared across the embed service and the boot-time self-update in index.ts,
+  // so the bot only ever talks to one yt-dlp binary/instance.
+  const ytdlp = new YtDlp();
+  const embed = createEmbedService(env, db, identity, quota, ytdlp);
+  return { db, review, quotaSummary, embed, ytdlp };
 }
 
 /** /embed_video needs the shared service secret; without it, no command. */
@@ -57,13 +60,14 @@ function createEmbedService(
   db: Db,
   identity: DbIdentity,
   quota: QuotaService,
+  ytdlp: YtDlp,
 ): EmbedService | undefined {
   const secrets = env.BOT_SERVICE_SECRET;
   if (!secrets) return undefined;
   const endpoint = env.UPLOAD_ENDPOINT ?? `${env.baseUrl}/api/upload`;
   return new EmbedService(
     {
-      ytdlp: new YtDlp(),
+      ytdlp,
       verifier: new EmbedVerifier(),
       upload: (opts) => tusUpload({ ...opts, endpoint }),
       sources: new EmbedSourceRepository(db),

@@ -99,7 +99,16 @@ CMD ["bun", "server.js"]
 FROM base AS bot
 ENV NODE_ENV=production
 RUN groupadd -g 1001 nodejs && useradd -m -u 1001 -g nodejs nextjs
-COPY --from=bot-tools /out/yt-dlp /out/deno /out/ffmpeg /out/ffprobe /usr/local/bin/
+# deno/ffmpeg/ffprobe are fixed at build time and stay root-owned in the system
+# path. yt-dlp self-updates at runtime (boot + on download failure), and its
+# --update replaces the binary in place — which needs write on the *directory*,
+# not just the file — so it lives in a nextjs-owned dir put ahead on PATH.
+ENV YTDLP_DIR=/home/nextjs/bin
+ENV PATH="/home/nextjs/bin:${PATH}"
+COPY --from=bot-tools /out/deno /out/ffmpeg /out/ffprobe /usr/local/bin/
+RUN mkdir -p "$YTDLP_DIR"
+COPY --from=bot-tools --chown=nextjs:nodejs /out/yt-dlp "$YTDLP_DIR/yt-dlp"
+RUN chown nextjs:nodejs "$YTDLP_DIR"
 
 WORKDIR /app
 ARG TARGETARCH

@@ -33,7 +33,15 @@ async function waitForMigrations(db: Db): Promise<void> {
 async function main(): Promise<void> {
   const env = getBotEnv();
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-  const { db, review, quotaSummary, embed } = createBotContainer(env, client);
+  const { db, review, quotaSummary, embed, ytdlp } = createBotContainer(
+    env,
+    client,
+  );
+
+  // The image pins a yt-dlp release that goes stale fast (site fixes ship
+  // almost daily). Refresh it on every container start so a long-lived image
+  // still downloads reliably; best-effort, never blocks boot on failure.
+  if (embed) void ytdlp.update();
 
   await waitForMigrations(db);
   await registerCommands(env, { embedVideo: embed !== undefined });

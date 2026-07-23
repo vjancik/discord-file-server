@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -30,7 +32,7 @@ afterEach(() => rmSync(tmp, { recursive: true, force: true }));
  * path (arg after "after_move:filepath") and output dir (dirname of the arg
  * after -o) the way the real binary would.
  */
-function fakeYtDlp(body: string): string {
+function fakeYtDlp(body: string, updateBody = ""): string {
   const bin = path.join(tmp, "yt-dlp-fake");
   writeFileSync(
     bin,
@@ -38,6 +40,10 @@ function fakeYtDlp(body: string): string {
 SIDECAR=""; OUTDIR=""
 prev=""
 for arg in "$@"; do
+  if [ "$arg" = "--update" ]; then
+    ${updateBody || 'echo "yt-dlp is up to date (2026.07.04)"'}
+    exit 0
+  fi
   if [ "$prev" = "after_move:filepath" ]; then SIDECAR="$arg"; fi
   if [ "$prev" = "-o" ]; then OUTDIR="$(dirname "$arg")"; fi
   prev="$arg"
@@ -138,6 +144,92 @@ exit 1
         "<https://example.test/v>",
       );
     }
+  });
+});
+
+describe("YtDlp.download retry-on-update", () => {
+  test("retries once after --update reports a real change", async () => {
+    // First download fails; --update touches a marker in the (fixed) job dir;
+    // the retry sees the marker and succeeds. The retry also clears the dir
+    // first, so the marker lives outside jobDir.
+    const marker = path.join(tmp, "updated");
+    const bin = fakeYtDlp(
+      `
+if [ -f "${marker}" ]; then
+  echo "content" > "$OUTDIR/clip [abc].mp4"
+  echo "$OUTDIR/clip [abc].mp4" > "$SIDECAR"
+  exit 0
+fi
+echo "ERROR: [generic] Unable to extract data; please report this issue" >&2
+exit 1
+`,
+      `touch "${marker}"; echo "Updating to 2026.09.01"`,
+    );
+    const { filePath } = await new YtDlp(bin).download(downloadReq());
+    expect(filePath).toBe(path.join(jobDir, "clip [abc].mp4"));
+  });
+
+  test("does not retry when --update reports up to date", async () => {
+    let attempts = 0;
+    const counter = path.join(tmp, "attempts");
+    const bin = fakeYtDlp(
+      `
+echo x >> "${counter}"
+echo "ERROR: [generic] Unable to extract data" >&2
+exit 1
+`,
+      `echo "yt-dlp is up to date (2026.07.04)"`,
+    );
+    await expect(new YtDlp(bin).download(downloadReq())).rejects.toThrow(
+      YtDlpError,
+    );
+    attempts = readFileSync(counter, "utf8").trim().split("\n").length;
+    expect(attempts).toBe(1);
+  });
+
+  test("does not update/retry when the download was aborted by the watchdog", async () => {
+    const marker = path.join(tmp, "updated-called");
+    const bin = fakeYtDlp(
+      `
+echo "EMBEDPROG 900000 NA NA NA NA"
+sleep 30
+`,
+      `touch "${marker}"; echo "Updating"`,
+    );
+    await expect(
+      new YtDlp(bin).download(
+        downloadReq({
+          shouldAbort: (bytes: number) =>
+            bytes > 500_000 ? "Exceeded remaining quota." : null,
+        }),
+      ),
+    ).rejects.toThrow(DownloadAbortedError);
+    expect(existsSync(marker)).toBe(false);
+  });
+});
+
+describe("YtDlp.update", () => {
+  test("reports changed:false when already up to date", async () => {
+    const bin = fakeYtDlp("", `echo "yt-dlp is up to date (2026.07.04)"`);
+    const res = await new YtDlp(bin).update();
+    expect(res.changed).toBe(false);
+  });
+
+  test("reports changed:true when a newer release is installed", async () => {
+    const bin = fakeYtDlp("", `echo "Updating to yt-dlp version 2026.09.01"`);
+    const res = await new YtDlp(bin).update();
+    expect(res.changed).toBe(true);
+  });
+
+  test("reports changed:false when the update errors", async () => {
+    const bin = fakeYtDlp("", `echo "ERROR: unable to write" >&2`);
+    const res = await new YtDlp(bin).update();
+    expect(res.changed).toBe(false);
+  });
+
+  test("never throws when the binary cannot be spawned", async () => {
+    const res = await new YtDlp(path.join(tmp, "does-not-exist")).update();
+    expect(res.changed).toBe(false);
   });
 });
 
