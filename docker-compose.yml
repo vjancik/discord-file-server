@@ -1,0 +1,82 @@
+# Production stack (PRD §7): Next.js standalone (Bun) + Caddy + Litestream.
+# HOST_* variables (set in .env) map homelab disks into the containers:
+#   HOST_STORAGE_DIR  → HDD array (completed files)
+#   HOST_STAGING_DIR  → SSD (in-progress tus uploads)
+#   HOST_DB_DIR       → SQLite database directory
+#   HOST_REPLICA_DIR  → Litestream replica target
+# The app container runs as uid 1001 — make the host dirs writable by it.
+services:
+  app:
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      STAGING_DIR: /srv/staging
+      STORAGE_DIR: /srv/uploads
+      DATABASE_PATH: /srv/db/app.sqlite
+      BASE_URL: https://${DOMAIN}
+    volumes:
+      - ${HOST_STORAGE_DIR}:/srv/uploads
+      - ${HOST_STAGING_DIR}:/srv/staging
+      - ${HOST_DB_DIR}:/srv/db
+    expose:
+      - "3000"
+
+  # Discord bot (QoL): /upload command + admin-channel review of pending
+  # uploads. Shares the SQLite DB (WAL, multi-process) and the storage mount
+  # (reject = delete bytes); waits at boot until the app has migrated.
+  bot:
+    build:
+      context: .
+      target: bot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      STORAGE_DIR: /srv/uploads
+      DATABASE_PATH: /srv/db/app.sqlite
+      BASE_URL: https://${DOMAIN}
+      # /embed_video scratch lives on the same SSD as staging so free-space
+      # admission is naturally shared with web uploads (docs/embed-video.md).
+      EMBED_SCRATCH_DIR: /srv/embed-scratch
+      # Upload over the internal network, not the public edge.
+      UPLOAD_ENDPOINT: http://app:3000/api/upload
+    volumes:
+      - ${HOST_STORAGE_DIR}:/srv/uploads
+      - ${HOST_DB_DIR}:/srv/db
+      - ${HOST_EMBED_SCRATCH_DIR:-./data/embed-scratch}:/srv/embed-scratch
+    depends_on:
+      - app
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${HOST_STORAGE_DIR}:/srv/uploads:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+  litestream:
+    image: litestream/litestream:latest
+    restart: unless-stopped
+    command: replicate
+    volumes:
+      - ./litestream.yml:/etc/litestream.yml:ro
+      - ${HOST_DB_DIR}:/srv/db
+      - ${HOST_REPLICA_DIR}:/replica
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
+  caddy_config:

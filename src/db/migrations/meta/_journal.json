@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1783071657772,
+      "tag": "0000_acoustic_firestar",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1784386718156,
+      "tag": "0001_tense_silvermane",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784457953173,
+      "tag": "0002_reflective_kate_bishop",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1784519472858,
+      "tag": "0003_giant_tattoo",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1784527613251,
+      "tag": "0004_lush_sersi",
+      "breakpoints": true
+    }
+  ]
+}

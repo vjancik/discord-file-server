@@ -1,0 +1,16 @@
+# Dev-through-tunnel overlay: expose a HOST-run `next dev` at the beta domain
+# through the existing Cloudflare tunnel — HMR, unminified errors, no image
+# rebuilds. Only caddy + cloudflared run in Docker; start with:
+#   bun run tunnel:dev
+# The Cloudflare public-hostname config (→ caddy:80) is unchanged; Caddy just
+# proxies to the host instead of the app container. Set BASE_URL=https://$DOMAIN
+# in .env while using this, or the dev server mints localhost links.
+services:
+  caddy:
+    volumes:
+      - ./Caddyfile.tunnel.dev:/etc/caddy/Caddyfile:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # The app container isn't part of this mode — drop the dependency so
+    # `up caddy cloudflared` doesn't start it.
+    depends_on: !reset []

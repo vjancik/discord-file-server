@@ -1,0 +1,8 @@
+# Dev-through-tunnel: cloudflared → Caddy → `next dev` running on the HOST.
+# The dev server owns every route here, including /f/* (its dev fallback
+# route streams files with basic Range support), so this is a single proxy —
+# no file_server, no host storage mount in play. host.docker.internal maps to
+# the host via the host-gateway extra_host in docker-compose.tunnel.dev.yml.
+http://{$DOMAIN} {
+	reverse_proxy host.docker.internal:3000
+}

@@ -1,0 +1,31 @@
+# Cloudflare Tunnel variant of the data plane (docker-compose.tunnel.yml
+# mounts this over /etc/caddy/Caddyfile). TLS terminates at Cloudflare's edge
+# and cloudflared forwards plain HTTP, so the site is http:// and Caddy never
+# attempts cert issuance (impossible behind CGNAT anyway).
+# Keep the /f/* block in sync with Caddyfile, and the extension list with
+# VIDEO_MIME/IMAGE_MIME/AUDIO_MIME in src/server/files/type-policy.ts.
+http://{$DOMAIN} {
+	handle_path /f/* {
+		root * /srv/uploads
+
+		# Keep leaked capability URLs out of search engines (PRD §8).
+		header X-Robots-Tag noindex
+
+		# Cloudflare's edge caches common image/audio extensions by default,
+		# which would keep deleted files alive at the edge and break
+		# revocation-by-deletion. Opt out of caching entirely for the beta.
+		header Cache-Control no-store
+
+		# Non-media downloads directly; media must NEVER get an attachment
+		# disposition or Discord embeds die (PRD §4).
+		@nonmedia not path_regexp \.(mp4|m4v|webm|mov|mkv|avi|png|jpe?g|gif|webp|avif|bmp|tiff|heic|heif|mp3|wav|ogg|oga|opus|flac|m4a|aac)$
+		header @nonmedia Content-Disposition attachment
+
+		# No `browse` directive: directory listing stays off (PRD §8).
+		file_server
+	}
+
+	handle {
+		reverse_proxy app:3000
+	}
+}

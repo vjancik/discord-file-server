@@ -1,0 +1,25 @@
+# Data plane (PRD §3): Caddy terminates TLS for {$DOMAIN} and serves file
+# bytes for /f/* straight from disk — Range requests, ETags, conditional GETs.
+# Everything else is reverse-proxied to the Next.js app.
+{$DOMAIN} {
+	handle_path /f/* {
+		root * /srv/uploads
+
+		# Keep leaked capability URLs out of search engines (PRD §8).
+		header X-Robots-Tag noindex
+
+		# Non-media downloads directly; media must NEVER get an attachment
+		# disposition or Discord embeds die (PRD §4). Keep this extension list
+		# in sync with VIDEO_MIME/IMAGE_MIME/AUDIO_MIME in
+		# src/server/files/type-policy.ts.
+		@nonmedia not path_regexp \.(mp4|m4v|webm|mov|mkv|avi|png|jpe?g|gif|webp|avif|bmp|tiff|heic|heif|mp3|wav|ogg|oga|opus|flac|m4a|aac)$
+		header @nonmedia Content-Disposition attachment
+
+		# No `browse` directive: directory listing stays off (PRD §8).
+		file_server
+	}
+
+	handle {
+		reverse_proxy app:3000
+	}
+}

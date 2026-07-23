@@ -1,0 +1,5 @@
+[test]
+# Registers happy-dom globals + Testing Library cleanup for component tests.
+preload = ["./src/test/setup-dom.ts"]
+# Keep bun test out of the Playwright specs in e2e/ (run those with `bun run test:e2e`).
+root = "src"
