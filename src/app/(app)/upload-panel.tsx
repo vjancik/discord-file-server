@@ -32,6 +32,14 @@ interface CompletedUpload {
 // capture it per upload URL so `upload-success` can pick it up.
 const finishBodies = new Map<string, CompletedUpload>();
 
+// Shown in the Dashboard while the final PATCH is in flight — i.e. after the
+// last byte is uploaded but before the server answers. The server does its
+// slow post-upload work (copy from SSD staging onto the HDD array, ffprobe,
+// metadata strip) synchronously inside that response, so without this the file
+// just sits at 100% with no explanation. See finalize.service.ts.
+const PROCESSING_MESSAGE =
+  "Finishing up — moving to storage & stripping metadata…";
+
 // Server-side "wait for space" is a 429 on upload creation. @uppy/tus walks
 // this array once per plugin instance across all 429 pauses (the iterator
 // never resets), so its sum is the total wait-for-space budget (~10 min)
@@ -161,6 +169,48 @@ export function UploadPanel({ remainingBytes }: { remainingBytes: number }) {
   // undefined; fall back to the app default (dark).
   const { resolvedTheme } = useTheme();
   const uppyTheme = resolvedTheme === "light" ? "light" : "dark";
+
+  // The tus uploader step holds the final PATCH open while the server copies
+  // the file from SSD staging onto the HDD array and runs ffprobe / metadata
+  // strip (all synchronous in that one response — see finalize.service.ts).
+  // Without a signal the Dashboard just parks the file at 100%. We drive the
+  // post-processing UI ourselves: the moment a file's bytes are fully sent,
+  // flip it into an indeterminate "finishing up" state; clear it when the
+  // final PATCH resolves (success) or the upload errors out.
+  useEffect(() => {
+    // Guard against re-emitting: upload-progress keeps firing at 100%, and we
+    // want exactly one postprocess-progress per file.
+    const processing = new Set<string>();
+
+    const onProgress: Parameters<typeof uppy.on<"upload-progress">>[1] = (
+      file,
+      progress,
+    ) => {
+      if (!file || processing.has(file.id)) return;
+      const { bytesUploaded, bytesTotal } = progress;
+      if (!bytesTotal || bytesUploaded < bytesTotal) return;
+      processing.add(file.id);
+      uppy.emit("postprocess-progress", file, {
+        mode: "indeterminate",
+        message: PROCESSING_MESSAGE,
+      });
+    };
+    // upload-success and upload-error have different signatures but agree on
+    // the file as their first arg, which is all we need to clear the state.
+    const clear = (file: { id: string } | undefined) => {
+      if (!file || !processing.delete(file.id)) return;
+      uppy.emit("postprocess-complete", uppy.getFile(file.id));
+    };
+
+    uppy.on("upload-progress", onProgress);
+    uppy.on("upload-success", clear);
+    uppy.on("upload-error", clear);
+    return () => {
+      uppy.off("upload-progress", onProgress);
+      uppy.off("upload-success", clear);
+      uppy.off("upload-error", clear);
+    };
+  }, [uppy]);
 
   useEffect(() => {
     const onSuccess: Parameters<typeof uppy.on<"upload-success">>[1] = (
