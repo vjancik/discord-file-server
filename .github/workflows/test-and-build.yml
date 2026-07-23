@@ -133,32 +133,6 @@ jobs:
         uses: docker/setup-buildx-action@v4
         id: setup-buildx
 
-      - name: Cache bun store (amd64)
-        uses: actions/cache@v6
-        with:
-          path: bun-cache-amd64
-          key: bun-amd64-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-amd64-
-
-      - name: Cache bun store (arm64)
-        if: github.event_name != 'pull_request'
-        uses: actions/cache@v6
-        with:
-          path: bun-cache-arm64
-          key: bun-arm64-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-arm64-
-
-      # Cache ids must match the `id=bun-$TARGETARCH` mounts in the Dockerfile.
-      - name: Restore cache mounts into BuildKit
-        uses: vjancik/buildkit-cache-dance@v1
-        with:
-          builder: ${{ steps.setup-buildx.outputs.name }}
-          cache-map: |
-            {
-              "bun-cache-amd64": { "target": "/root/.bun/install/cache", "id": "bun-amd64" },
-              "bun-cache-arm64": { "target": "/root/.bun/install/cache", "id": "bun-arm64" }
-            }
-
       - name: Build and push web image
         id: push-web
         uses: docker/build-push-action@v7
