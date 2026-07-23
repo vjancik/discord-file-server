@@ -11,6 +11,13 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # Stay on Node 24 types to match Bun's Node-compat level (not on the latest Node major).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # Stay on the TypeScript 5.x line; hold off on the 7.x native port for now.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "docker"
     directory: "/"
