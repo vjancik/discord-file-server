@@ -3,11 +3,18 @@
 import Uppy from "@uppy/core";
 import Dashboard from "@uppy/react/dashboard";
 import Tus from "@uppy/tus";
+import { TriangleAlert } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CopyButton } from "@/components/copy-button";
-import { isBlockedExtension } from "@/lib/blocked-extensions";
+import { extensionOf, isBlockedExtension } from "@/lib/blocked-extensions";
+import {
+  looksLikeText,
+  shouldSniffForText,
+  summarizeStripWarnings,
+  TEXT_SNIFF_BYTES,
+} from "@/lib/metadata-support";
 import { formatSpeed, SpeedEstimator } from "@/lib/upload-speed";
 
 // Order matters: the theme overrides must load after Uppy's own styles.
@@ -97,9 +104,58 @@ function createUppy() {
   });
 }
 
+/**
+ * Amber heads-up above the drop region: which of the selected files the
+ * metadata-strip pipeline can't clean, and that archive contents are never
+ * cleaned (zip containers are; the files inside are not).
+ */
+function MetadataStripNotice({
+  fileNames,
+  sniffedText,
+}: {
+  fileNames: string[];
+  sniffedText: ReadonlySet<string>;
+}) {
+  const { unsupported, archives } = useMemo(
+    () => summarizeStripWarnings(fileNames, sniffedText),
+    [fileNames, sniffedText],
+  );
+  if (unsupported.length === 0 && archives.length === 0) return null;
+
+  const withExt = (name: string) => {
+    const ext = extensionOf(name);
+    return ext ? `${name} (.${ext})` : name;
+  };
+  return (
+    <div className="flex items-start gap-3 rounded-md border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-amber-700 text-sm dark:text-amber-300">
+      <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <div className="flex min-w-0 flex-col gap-1">
+        {unsupported.length > 0 && (
+          <p className="break-words">
+            Metadata removal is probably not supported for:{" "}
+            {unsupported.map(withExt).join(", ")}
+          </p>
+        )}
+        {archives.length > 0 && (
+          <p className="break-words">
+            Files inside archives keep their metadata: {archives.join(", ")}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function UploadPanel({ remainingBytes }: { remainingBytes: number }) {
   const [uppy] = useState(createUppy);
   const [completed, setCompleted] = useState<CompletedUpload[]>([]);
+  const [fileNames, setFileNames] = useState<string[]>([]);
+  // Names whose byte prefix sniffed as text: they suppress the "can't strip"
+  // warning even though their extension is unrecognized. Populated async by
+  // the sniff effect, so the bar may flash then clear a frame later.
+  const [sniffedText, setSniffedText] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   // Uppy's "auto" theme follows prefers-color-scheme, not our next-themes
   // class toggle — drive it explicitly. Before hydration resolvedTheme is
   // undefined; fall back to the app default (dark).
@@ -140,13 +196,66 @@ export function UploadPanel({ remainingBytes }: { remainingBytes: number }) {
     const onRemoved = () => {
       if (uppy.getFiles().length === 0) toast.dismiss(WAIT_TOAST_ID);
     };
+    // Selection tracking for the metadata warning bar.
+    const syncNames = () =>
+      setFileNames(uppy.getFiles().map((f) => f.name ?? ""));
+    // Content-sniff files whose extension we don't recognize: if the first
+    // few KB look like text, drop them from the warning. Reads a lazy Blob
+    // slice, so only the prefix is pulled off disk, never the whole file.
+    const sniffAdded: Parameters<typeof uppy.on<"files-added">>[1] = (
+      files,
+    ) => {
+      for (const file of files) {
+        const name = file.name ?? "";
+        if (!name || !shouldSniffForText(name)) continue;
+        const blob = file.data;
+        if (!(blob instanceof Blob)) continue;
+        blob
+          .slice(0, TEXT_SNIFF_BYTES)
+          .arrayBuffer()
+          .then((buf) => {
+            if (!looksLikeText(new Uint8Array(buf))) return;
+            setSniffedText((prev) => {
+              const next = new Set(prev);
+              next.add(name);
+              return next;
+            });
+          })
+          .catch(() => {
+            // Unreadable slice: leave the warning in place (fail toward
+            // showing the heads-up rather than hiding it).
+          });
+      }
+    };
+    // Drop sniff results for files no longer selected so a re-added file with
+    // the same name gets re-sniffed and the set doesn't grow unbounded.
+    const pruneSniffed = () => {
+      const present = new Set(uppy.getFiles().map((f) => f.name ?? ""));
+      setSniffedText((prev) => {
+        const next = new Set<string>();
+        for (const name of prev) if (present.has(name)) next.add(name);
+        return next.size === prev.size ? prev : next;
+      });
+    };
     uppy.on("upload-success", onSuccess);
     uppy.on("upload-error", onError);
     uppy.on("file-removed", onRemoved);
+    uppy.on("files-added", syncNames);
+    uppy.on("files-added", sniffAdded);
+    uppy.on("file-removed", syncNames);
+    uppy.on("file-removed", pruneSniffed);
+    uppy.on("cancel-all", syncNames);
+    uppy.on("cancel-all", pruneSniffed);
     return () => {
       uppy.off("upload-success", onSuccess);
       uppy.off("upload-error", onError);
       uppy.off("file-removed", onRemoved);
+      uppy.off("files-added", syncNames);
+      uppy.off("files-added", sniffAdded);
+      uppy.off("file-removed", syncNames);
+      uppy.off("file-removed", pruneSniffed);
+      uppy.off("cancel-all", syncNames);
+      uppy.off("cancel-all", pruneSniffed);
     };
   }, [uppy]);
 
@@ -195,6 +304,7 @@ export function UploadPanel({ remainingBytes }: { remainingBytes: number }) {
 
   return (
     <div className="flex flex-col gap-6">
+      <MetadataStripNotice fileNames={fileNames} sniffedText={sniffedText} />
       <Dashboard
         uppy={uppy}
         theme={uppyTheme}

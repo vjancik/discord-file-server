@@ -21,7 +21,17 @@ test("returns defaults when no row exists", () => {
     userId,
     autoDeleteOldest: false,
     skipDeleteConfirm: false,
+    // privacy toggles default on — stripping must be opt-out, not opt-in
+    stripMediaMetadata: true,
+    stripDocumentMetadata: true,
   });
+});
+
+test("strip toggles persist when turned off", () => {
+  repo.update(userId, { stripMediaMetadata: false });
+  const settings = repo.get(userId);
+  expect(settings.stripMediaMetadata).toBe(false);
+  expect(settings.stripDocumentMetadata).toBe(true);
 });
 
 test("update creates the row on first write and patches on later writes", () => {

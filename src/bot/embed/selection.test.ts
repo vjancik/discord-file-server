@@ -3,6 +3,7 @@ import {
   buildCandidates,
   fitsLimit,
   type ProbeInfo,
+  pickThumbnail,
   planEmbed,
 } from "./selection";
 
@@ -242,5 +243,48 @@ describe("planEmbed", () => {
     };
     const plan = planEmbed(info, 500 * MB);
     expect(plan.kind).toBe("unknown");
+  });
+});
+
+describe("pickThumbnail", () => {
+  test("prefers the highest yt-dlp preference", () => {
+    const url = pickThumbnail({
+      thumbnails: [
+        { url: "https://cdn.test/low.jpg", width: 320, preference: -10 },
+        { url: "https://cdn.test/best.jpg", width: 640, preference: 0 },
+        { url: "https://cdn.test/mid.jpg", width: 480, preference: -5 },
+      ],
+    });
+    expect(url).toBe("https://cdn.test/best.jpg");
+  });
+
+  test("at equal preference, prefers the largest within the width cap", () => {
+    const url = pickThumbnail({
+      thumbnails: [
+        { url: "https://cdn.test/small.jpg", width: 480, preference: 0 },
+        { url: "https://cdn.test/huge.jpg", width: 8000, preference: 0 },
+        { url: "https://cdn.test/big.jpg", width: 1920, preference: 0 },
+      ],
+    });
+    expect(url).toBe("https://cdn.test/big.jpg");
+  });
+
+  test("falls back to the single `thumbnail` field", () => {
+    expect(pickThumbnail({ thumbnail: "https://cdn.test/only.jpg" })).toBe(
+      "https://cdn.test/only.jpg",
+    );
+  });
+
+  test("ignores non-http(s) and empty urls; returns null when none usable", () => {
+    expect(
+      pickThumbnail({
+        thumbnails: [
+          { url: "data:image/png;base64,AAAA", width: 640 },
+          { url: "", width: 320 },
+        ],
+        thumbnail: "file:///etc/passwd",
+      }),
+    ).toBeNull();
+    expect(pickThumbnail({})).toBeNull();
   });
 });

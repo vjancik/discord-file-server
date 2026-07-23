@@ -9,9 +9,16 @@ import { updateSettingsAction } from "./actions";
 interface Props {
   autoDeleteOldest: boolean;
   skipDeleteConfirm: boolean;
+  stripMediaMetadata: boolean;
+  stripDocumentMetadata: boolean;
 }
 
-export function SettingsForm({ autoDeleteOldest, skipDeleteConfirm }: Props) {
+export function SettingsForm({
+  autoDeleteOldest,
+  skipDeleteConfirm,
+  stripMediaMetadata,
+  stripDocumentMetadata,
+}: Props) {
   const [pending, startTransition] = useTransition();
 
   const update = (patch: Parameters<typeof updateSettingsAction>[0]) =>
@@ -55,6 +62,44 @@ export function SettingsForm({ autoDeleteOldest, skipDeleteConfirm }: Props) {
           checked={!skipDeleteConfirm}
           disabled={pending}
           onCheckedChange={(v) => update({ skipDeleteConfirm: !v })}
+        />
+      </div>
+
+      <div className="flex items-start justify-between gap-4 rounded-md border p-4">
+        <div>
+          <Label htmlFor="strip-media">
+            Remove metadata from photos, video &amp; audio
+          </Label>
+          <p className="mt-1 text-muted-foreground text-sm">
+            Strips GPS location, device info and other embedded metadata from
+            uploaded media before it&apos;s published. Image pixels and
+            audio/video streams are untouched — no re-encoding.
+          </p>
+        </div>
+        <Switch
+          id="strip-media"
+          checked={stripMediaMetadata}
+          disabled={pending}
+          onCheckedChange={(v) => update({ stripMediaMetadata: v })}
+        />
+      </div>
+
+      <div className="flex items-start justify-between gap-4 rounded-md border p-4">
+        <div>
+          <Label htmlFor="strip-documents">
+            Remove metadata from documents &amp; other files
+          </Label>
+          <p className="mt-1 text-muted-foreground text-sm">
+            Strips author and account names from PDFs and Office documents
+            (docx, xlsx, pptx, odt…), and timestamps/ownership info from zip
+            archives. Files inside archives are never modified.
+          </p>
+        </div>
+        <Switch
+          id="strip-documents"
+          checked={stripDocumentMetadata}
+          disabled={pending}
+          onCheckedChange={(v) => update({ stripDocumentMetadata: v })}
         />
       </div>
     </div>

@@ -1,9 +1,11 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import type { FileRow } from "@/db/schema";
+import type { FileRow, MetadataStatus } from "@/db/schema";
 import { createLogger } from "@/lib/logger";
 import { generateFileId, generateShortCode } from "../links/ids";
 import type { MediaProber } from "../media/prober";
+import { MetadataStripError } from "../metadata/errors";
+import type { MetadataStripper, StripFlags } from "../metadata/strip.service";
 import type { FileRepository } from "./file.repository";
 import type { FileStorage } from "./storage";
 import { classifyUpload, sniffExecutable } from "./type-policy";
@@ -17,6 +19,16 @@ export interface FinalizeInput {
   rawFileName: string;
   clientMime?: string;
   sizeBytes: number;
+  /**
+   * Source-provided poster URL (social embeds). Preferred over an ffmpeg
+   * frame-grab for videos when it can be fetched; frame-grab is the fallback.
+   */
+  sourceThumbnailUrl?: string;
+  /**
+   * Metadata-strip toggles from the uploader's settings. Defaults to both on:
+   * a missed wire-up must err toward cleaning, never toward leaking.
+   */
+  strip?: StripFlags;
 }
 
 const log = createLogger("finalize");
@@ -31,6 +43,7 @@ export class FinalizeService {
     private readonly repo: FileRepository,
     private readonly storage: FileStorage,
     private readonly prober: MediaProber,
+    private readonly stripper: MetadataStripper,
     private readonly opts: { defaultExpiryMs?: number } = {},
   ) {}
 
@@ -57,15 +70,45 @@ export class FinalizeService {
       await mkdir(this.storage.dirFor(fileId), { recursive: true });
       if (kind === "video" || kind === "image") {
         const thumbDest = this.storage.pathFor(fileId, "thumb.jpg");
-        const made = await this.prober.makeThumbnail(
-          input.stagingPath,
-          thumbDest,
-          kind,
-          info,
-        );
+        // For videos, a source-provided poster (social embeds) usually beats a
+        // frame-grab — try it first, fall back to ffmpeg on any failure.
+        let made = false;
+        if (kind === "video" && input.sourceThumbnailUrl) {
+          made = await this.prober.thumbnailFromUrl(
+            input.sourceThumbnailUrl,
+            thumbDest,
+          );
+        }
+        if (!made) {
+          made = await this.prober.makeThumbnail(
+            input.stagingPath,
+            thumbDest,
+            kind,
+            info,
+          );
+        }
         thumbnailPath = made ? path.posix.join(fileId, "thumb.jpg") : null;
       }
-      await this.storage.moveIntoStorage(input.stagingPath, fileId, fileName);
+      // Delivery into storage is the stripper's job: cleaned when the type +
+      // settings allow it, a plain move otherwise. Fail closed on strip
+      // errors — publishing dirty bytes would silently break the toggle's
+      // promise.
+      let metadataStatus: MetadataStatus = "possible";
+      try {
+        ({ metadataStatus } = await this.stripper.deliver({
+          stagingPath: input.stagingPath,
+          fileId,
+          fileName,
+          kind,
+          flags: input.strip ?? { media: true, documents: true },
+        }));
+      } catch (err) {
+        if (err instanceof MetadataStripError)
+          throw new UploadRejectedError(
+            `Metadata removal failed: ${err.message}`,
+          );
+        throw err;
+      }
 
       const row = this.repo.insert({
         id: fileId,
@@ -79,6 +122,7 @@ export class FinalizeService {
         height: info.height ?? null,
         durationSeconds: info.durationSeconds ?? null,
         thumbnailPath,
+        metadataStatus,
         expiresAt: this.opts.defaultExpiryMs
           ? new Date(Date.now() + this.opts.defaultExpiryMs)
           : null,

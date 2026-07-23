@@ -5,6 +5,8 @@ import path from "node:path";
 import type { Db } from "@/db/client";
 import { createTestDb, insertTestUser } from "@/test/db";
 import type { MediaInfo, MediaProber } from "../media/prober";
+import { MetadataStripError } from "../metadata/errors";
+import type { MetadataStripper } from "../metadata/strip.service";
 import { FileRepository } from "./file.repository";
 import { FileService } from "./file.service";
 import { FinalizeService, UploadRejectedError } from "./finalize.service";
@@ -29,7 +31,18 @@ const fakeProber = (
       await Bun.write(dest, "fake-jpeg");
       return true;
     },
+    async thumbnailFromUrl() {
+      return false;
+    },
   }) satisfies MediaProber;
+
+/** Stripper that just moves, like an unsupported type would. */
+const passStripper = (): MetadataStripper => ({
+  async deliver({ stagingPath, fileId, fileName }) {
+    await storage.moveIntoStorage(stagingPath, fileId, fileName);
+    return { metadataStatus: "possible" };
+  },
+});
 
 beforeEach(() => {
   ({ db, cleanup: dbCleanup } = createTestDb());
@@ -64,7 +77,12 @@ const MP4_HEAD = new Uint8Array([
 describe("FinalizeService", () => {
   test("publishes a video: probe data, thumbnail, moved bytes, pending row, short code", async () => {
     const staging = await stageFile("upload-1", MP4_HEAD);
-    const service = new FinalizeService(repo, storage, fakeProber());
+    const service = new FinalizeService(
+      repo,
+      storage,
+      fakeProber(),
+      passStripper(),
+    );
 
     const row = await service.finalize({
       stagingPath: staging,
@@ -88,9 +106,76 @@ describe("FinalizeService", () => {
     expect(repo.findLiveById(row.id)?.id).toBe(row.id);
   });
 
+  test("video: source thumbnail is preferred over the ffmpeg frame-grab", async () => {
+    const staging = await stageFile("upload-thumb-src", MP4_HEAD);
+    const calls: string[] = [];
+    const prober: MediaProber = {
+      ...fakeProber(),
+      async thumbnailFromUrl(url, dest) {
+        calls.push(`fromUrl:${url}`);
+        await Bun.write(dest, "poster-jpeg");
+        return true;
+      },
+      async makeThumbnail(_src, dest, kind) {
+        calls.push("frameGrab");
+        await Bun.write(dest, "fake-jpeg");
+        return kind === "video" || kind === "image";
+      },
+    };
+    const service = new FinalizeService(repo, storage, prober, passStripper());
+
+    const row = await service.finalize({
+      stagingPath: staging,
+      ownerId: owner,
+      rawFileName: "clip.mp4",
+      clientMime: "video/mp4",
+      sizeBytes: MP4_HEAD.length,
+      sourceThumbnailUrl: "https://cdn.test/poster.jpg",
+    });
+
+    expect(calls).toEqual(["fromUrl:https://cdn.test/poster.jpg"]);
+    expect(row.thumbnailPath).toBe(`${row.id}/thumb.jpg`);
+    expect(existsSync(storage.pathFor(row.id, "thumb.jpg"))).toBe(true);
+  });
+
+  test("video: falls back to the frame-grab when the source thumbnail fails", async () => {
+    const staging = await stageFile("upload-thumb-fallback", MP4_HEAD);
+    const calls: string[] = [];
+    const prober: MediaProber = {
+      ...fakeProber(),
+      async thumbnailFromUrl(url) {
+        calls.push(`fromUrl:${url}`);
+        return false; // unreachable / undecodable poster
+      },
+      async makeThumbnail(_src, dest, kind) {
+        calls.push("frameGrab");
+        await Bun.write(dest, "fake-jpeg");
+        return kind === "video" || kind === "image";
+      },
+    };
+    const service = new FinalizeService(repo, storage, prober, passStripper());
+
+    const row = await service.finalize({
+      stagingPath: staging,
+      ownerId: owner,
+      rawFileName: "clip.mp4",
+      clientMime: "video/mp4",
+      sizeBytes: MP4_HEAD.length,
+      sourceThumbnailUrl: "https://cdn.test/poster.jpg",
+    });
+
+    expect(calls).toEqual(["fromUrl:https://cdn.test/poster.jpg", "frameGrab"]);
+    expect(row.thumbnailPath).toBe(`${row.id}/thumb.jpg`);
+  });
+
   test("non-media file: no probe, no thumbnail, kind other", async () => {
     const staging = await stageFile("upload-2", "plain text content");
-    const service = new FinalizeService(repo, storage, fakeProber());
+    const service = new FinalizeService(
+      repo,
+      storage,
+      fakeProber(),
+      passStripper(),
+    );
 
     const row = await service.finalize({
       stagingPath: staging,
@@ -118,7 +203,12 @@ describe("FinalizeService", () => {
       ...new Array(64).fill(0),
     ]);
     const staging = await stageFile("upload-3", elf);
-    const service = new FinalizeService(repo, storage, fakeProber());
+    const service = new FinalizeService(
+      repo,
+      storage,
+      fakeProber(),
+      passStripper(),
+    );
 
     expect(
       service.finalize({
@@ -135,9 +225,15 @@ describe("FinalizeService", () => {
 
   test("applies DEFAULT_FILE_EXPIRY when configured", async () => {
     const staging = await stageFile("upload-4", "content");
-    const service = new FinalizeService(repo, storage, fakeProber(), {
-      defaultExpiryMs: 60_000,
-    });
+    const service = new FinalizeService(
+      repo,
+      storage,
+      fakeProber(),
+      passStripper(),
+      {
+        defaultExpiryMs: 60_000,
+      },
+    );
     const row = await service.finalize({
       stagingPath: staging,
       ownerId: owner,
@@ -147,12 +243,99 @@ describe("FinalizeService", () => {
     expect(row.expiresAt).toBeInstanceOf(Date);
     expect((row.expiresAt as Date).getTime()).toBeGreaterThan(Date.now());
   });
+
+  test("persists metadata_status=stripped when the stripper cleans the file", async () => {
+    const staging = await stageFile("upload-strip", MP4_HEAD);
+    const stripper: MetadataStripper = {
+      async deliver({ stagingPath, fileId, fileName }) {
+        await storage.moveIntoStorage(stagingPath, fileId, fileName);
+        return { metadataStatus: "stripped" };
+      },
+    };
+    const service = new FinalizeService(repo, storage, fakeProber(), stripper);
+
+    const row = await service.finalize({
+      stagingPath: staging,
+      ownerId: owner,
+      rawFileName: "clip.mp4",
+      sizeBytes: MP4_HEAD.length,
+      strip: { media: true, documents: true },
+    });
+
+    expect(row.metadataStatus).toBe("stripped");
+    expect(repo.findLiveById(row.id)?.metadataStatus).toBe("stripped");
+  });
+
+  test("passes strip flags through and defaults them to on", async () => {
+    const seen: unknown[] = [];
+    const stripper: MetadataStripper = {
+      async deliver(input) {
+        seen.push(input.flags);
+        await storage.moveIntoStorage(
+          input.stagingPath,
+          input.fileId,
+          input.fileName,
+        );
+        return { metadataStatus: "possible" };
+      },
+    };
+    const service = new FinalizeService(repo, storage, fakeProber(), stripper);
+
+    const s1 = await stageFile("upload-flags-1", "content");
+    await service.finalize({
+      stagingPath: s1,
+      ownerId: owner,
+      rawFileName: "a.txt",
+      sizeBytes: 7,
+      strip: { media: false, documents: true },
+    });
+    const s2 = await stageFile("upload-flags-2", "content");
+    const row = await service.finalize({
+      stagingPath: s2,
+      ownerId: owner,
+      rawFileName: "b.txt",
+      sizeBytes: 7,
+    });
+
+    expect(seen).toEqual([
+      { media: false, documents: true },
+      { media: true, documents: true },
+    ]);
+    expect(row.metadataStatus).toBe("possible");
+  });
+
+  test("maps a strip failure to UploadRejectedError and rolls back storage", async () => {
+    const staging = await stageFile("upload-strip-fail", MP4_HEAD);
+    const stripper: MetadataStripper = {
+      async deliver() {
+        throw new MetadataStripError("ffmpeg could not process the file");
+      },
+    };
+    const service = new FinalizeService(repo, storage, fakeProber(), stripper);
+
+    await expect(
+      service.finalize({
+        stagingPath: staging,
+        ownerId: owner,
+        rawFileName: "clip.mp4",
+        sizeBytes: MP4_HEAD.length,
+      }),
+    ).rejects.toBeInstanceOf(UploadRejectedError);
+
+    const { readdirSync } = await import("node:fs");
+    expect(readdirSync(path.join(tmp, "storage"))).toHaveLength(0);
+  });
 });
 
 describe("FileService.delete", () => {
   test("removes bytes and tombstones the row", async () => {
     const staging = await stageFile("upload-5", MP4_HEAD);
-    const finalize = new FinalizeService(repo, storage, fakeProber());
+    const finalize = new FinalizeService(
+      repo,
+      storage,
+      fakeProber(),
+      passStripper(),
+    );
     const files = new FileService(repo, storage);
 
     const row = await finalize.finalize({

@@ -10,6 +10,7 @@ import { FileService } from "./files/file.service";
 import { FinalizeService } from "./files/finalize.service";
 import { FileStorage } from "./files/storage";
 import { FfmpegProber } from "./media/prober";
+import { MetadataStripService } from "./metadata/strip.service";
 import { QuotaService } from "./quota/quota.service";
 import { JtiRepository } from "./uploads/service-token";
 import { SettingsRepository } from "./users/settings.repository";
@@ -52,9 +53,13 @@ export function getContainer(): Container {
       storageLimit: env.STORAGE_LIMIT,
       maxFileSize: env.MAX_FILE_SIZE,
     }),
-    finalize: new FinalizeService(fileRepo, storage, new FfmpegProber(), {
-      defaultExpiryMs: env.DEFAULT_FILE_EXPIRY,
-    }),
+    finalize: new FinalizeService(
+      fileRepo,
+      storage,
+      new FfmpegProber(),
+      new MetadataStripService(storage),
+      { defaultExpiryMs: env.DEFAULT_FILE_EXPIRY },
+    ),
     files: new FileService(fileRepo, storage),
     jtis: new JtiRepository(db),
     stagingLedger,

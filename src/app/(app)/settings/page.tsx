@@ -34,6 +34,8 @@ export default async function SettingsPage() {
         <SettingsForm
           autoDeleteOldest={settings.autoDeleteOldest}
           skipDeleteConfirm={settings.skipDeleteConfirm}
+          stripMediaMetadata={settings.stripMediaMetadata}
+          stripDocumentMetadata={settings.stripDocumentMetadata}
         />
       </section>
     </div>

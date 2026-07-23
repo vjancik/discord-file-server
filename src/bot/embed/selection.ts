@@ -38,6 +38,19 @@ export type ProbeInfo = {
   _type?: string;
   entries?: unknown[];
   formats?: ProbeFormat[];
+  /** Single fallback thumbnail URL some extractors provide instead of a list. */
+  thumbnail?: string | null;
+  /** Candidate thumbnails, richest source of poster art (docs/embed-video.md). */
+  thumbnails?: ProbeThumbnail[];
+};
+
+/** Subset of a yt-dlp `-J` thumbnail entry we consume. */
+export type ProbeThumbnail = {
+  url?: string | null;
+  width?: number | null;
+  height?: number | null;
+  /** yt-dlp's own ranking; higher is better. */
+  preference?: number | null;
 };
 
 /** exact > approx > rough; "unknown" means no basis for a number at all. */
@@ -192,6 +205,46 @@ export function buildCandidates(info: ProbeInfo): Candidate[] {
       c.estimate.confidence === "unknown" ? 0 : c.estimate.bytes;
     return bytes(b) - bytes(a);
   });
+}
+
+/**
+ * Best source thumbnail URL, or null. Social sources often ship a far better
+ * poster than an ffmpeg frame-grab, so we reuse it when the server can fetch
+ * it (finalize downscales + falls back to the ffmpeg frame on any failure).
+ *
+ * "Best reasonably sized": prefer yt-dlp's own `preference`, then the largest
+ * thumbnail whose width stays under a sane cap (huge originals just cost
+ * bandwidth — finalize scales everything to ≤640px anyway), then any URL.
+ */
+const THUMB_MAX_WIDTH = 2048;
+
+export function pickThumbnail(info: ProbeInfo): string | null {
+  const withUrl = (info.thumbnails ?? []).filter(
+    (t): t is ProbeThumbnail & { url: string } =>
+      typeof t.url === "string" && /^https?:\/\//i.test(t.url),
+  );
+  if (withUrl.length > 0) {
+    const score = (t: ProbeThumbnail & { url: string }) => {
+      const pref = typeof t.preference === "number" ? t.preference : 0;
+      const width = typeof t.width === "number" && t.width > 0 ? t.width : 0;
+      // Oversized posters lose to anything within the cap, but a too-big
+      // thumbnail still beats no width info at all.
+      const sized = width > 0 && width <= THUMB_MAX_WIDTH ? width : -1;
+      return { pref, sized, width };
+    };
+    const best = withUrl.reduce((a, b) => {
+      const sa = score(a);
+      const sb = score(b);
+      if (sa.pref !== sb.pref) return sa.pref > sb.pref ? a : b;
+      if (sa.sized !== sb.sized) return sa.sized > sb.sized ? a : b;
+      return sa.width >= sb.width ? a : b;
+    });
+    return best.url;
+  }
+  return typeof info.thumbnail === "string" &&
+    /^https?:\/\//i.test(info.thumbnail)
+    ? info.thumbnail
+    : null;
 }
 
 export function planEmbed(info: ProbeInfo, embedLimit: number): EmbedPlan {

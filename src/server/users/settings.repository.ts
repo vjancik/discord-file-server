@@ -5,6 +5,8 @@ import { type UserSettingsRow, userSettings } from "@/db/schema";
 const DEFAULTS: Omit<UserSettingsRow, "userId"> = {
   autoDeleteOldest: false,
   skipDeleteConfirm: false,
+  stripMediaMetadata: true,
+  stripDocumentMetadata: true,
 };
 
 export class SettingsRepository {

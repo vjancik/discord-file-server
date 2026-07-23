@@ -15,6 +15,26 @@ export const FILE_STATUSES = ["pending", "approved"] as const;
 export type FileStatus = (typeof FILE_STATUSES)[number];
 
 /**
+ * Outcome of the finalize metadata-strip pipeline, recorded per file:
+ * - `stripped`: a strategy ran and removed the metadata channel (images,
+ *   video/audio, PDF, Office).
+ * - `none`: the format has no embedded-metadata channel to begin with — plain
+ *   text, source code, config (the `NO_METADATA_EXTS` fast path). Nothing to
+ *   remove, so nothing was.
+ * - `possible`: the file may still carry PII — stripping was disabled by the
+ *   user's toggle, the format is uncleanable (tar/7z/legacy Office/unknown
+ *   binary), or it's an archive whose container we cleaned but whose contents
+ *   we never touch (zip).
+ *
+ * `none` is decided server-side from the extension allowlist only; the upload
+ * page's content-sniff (which can also treat an unknown extension as text) is
+ * a cosmetic warning-suppressor and never promotes a file to `none` here.
+ * Not surfaced in the UI yet.
+ */
+export const METADATA_STATUSES = ["stripped", "none", "possible"] as const;
+export type MetadataStatus = (typeof METADATA_STATUSES)[number];
+
+/**
  * One row per upload. Rows survive deletion as tombstones for admin
  * accountability (PRD §3): `deletedAt IS NOT NULL` means the bytes are gone
  * but the record isn't. All "live file" queries must filter on deletedAt.
@@ -41,6 +61,10 @@ export const files = sqliteTable(
     durationSeconds: integer("duration_seconds"),
     /** Path relative to STORAGE_DIR, e.g. "<id>/thumb.jpg"; null = no thumbnail. */
     thumbnailPath: text("thumbnail_path"),
+    /** Outcome of the metadata-strip pipeline; see {@link METADATA_STATUSES}. */
+    metadataStatus: text("metadata_status", { enum: METADATA_STATUSES })
+      .notNull()
+      .default("possible"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
@@ -116,6 +140,14 @@ export const userSettings = sqliteTable("user_settings", {
   skipDeleteConfirm: integer("skip_delete_confirm", { mode: "boolean" })
     .notNull()
     .default(false),
+  /** Strip embedded metadata (EXIF GPS, device tags…) from photos, video and audio. */
+  stripMediaMetadata: integer("strip_media_metadata", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  /** Strip author/account metadata from documents (PDF, Office) and zip containers. */
+  stripDocumentMetadata: integer("strip_document_metadata", { mode: "boolean" })
+    .notNull()
+    .default(true),
 });
 
 export const filesRelations = relations(files, ({ one }) => ({

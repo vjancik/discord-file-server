@@ -34,6 +34,11 @@ jobs:
       - name: Install dependencies
         run: bun ci
 
+      # The metadata-strip integration tests run the real cleaning tools
+      # (they skip per missing binary locally; CI must never skip them).
+      - name: Install strip tools (ffmpeg, exiftool, qpdf)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg libimage-exiftool-perl qpdf
+
       # Route/typed-env definitions normally emitted by `next build`/`next dev`;
       # tsconfig includes them, so generate before typechecking.
       - name: Generate Next.js types
@@ -67,11 +72,13 @@ jobs:
       - name: Install dependencies
         run: bun ci
 
-      # The upload finalize hook shells out to ffprobe/ffmpeg; runners don't
-      # ship them. apt's ffmpeg is likely older than the pinned static builds
-      # in the production image (Dockerfile bot-tools stage) — fine for e2e.
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      # The upload finalize hook shells out to ffprobe/ffmpeg (probe +
+      # media metadata strip) and exiftool/qpdf (image/pdf metadata strip);
+      # runners don't ship them. apt's ffmpeg is likely older than the pinned
+      # static builds in the production image (Dockerfile bot-tools stage) —
+      # fine for e2e.
+      - name: Install ffmpeg, exiftool, qpdf
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg libimage-exiftool-perl qpdf
 
       - name: Install Playwright Chromium
         run: bunx playwright install --with-deps chromium

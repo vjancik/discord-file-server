@@ -20,6 +20,13 @@ export interface MediaProber {
     kind: FileKind,
     info: MediaInfo,
   ): Promise<boolean>;
+  /**
+   * Fetches a remote poster (e.g. a social source's own thumbnail) and writes
+   * it as a normalized JPEG at `destPath`. Resolves false on any failure
+   * (unreachable, oversized, undecodable) so the caller can fall back to a
+   * frame-grab. Best-effort and safe against a hostile URL — never throws.
+   */
+  thumbnailFromUrl(url: string, destPath: string): Promise<boolean>;
 }
 
 const log = createLogger("prober");
@@ -98,16 +105,112 @@ export class FfmpegProber implements MediaProber {
       const seek = Math.min(5, (info.durationSeconds ?? 0) * 0.1);
       args.push("-ss", seek.toFixed(2));
     }
-    args.push(
-      "-i",
-      sourcePath,
-      "-frames:v",
-      "1",
-      "-vf",
-      "scale='min(640,iw)':-2",
-      destPath,
-    );
+    args.push("-i", sourcePath, "-frames:v", "1", "-vf", THUMB_SCALE, destPath);
     const { ok } = await run(args);
     return ok;
+  }
+
+  async thumbnailFromUrl(url: string, destPath: string): Promise<boolean> {
+    const bytes = await fetchPoster(url);
+    if (!bytes) return false;
+    // Decode from stdin and normalize to the same ≤640px JPEG makeThumbnail
+    // produces, so /f/.../thumb.jpg and the OG card are shape-consistent. A
+    // non-image (HTML error page, truncated bytes) makes ffmpeg exit non-zero,
+    // which run() reports as ok:false — the frame-grab fallback then applies.
+    const proc = Bun.spawn(
+      [
+        "ffmpeg",
+        "-v",
+        "error",
+        "-y",
+        "-i",
+        "pipe:0",
+        "-frames:v",
+        "1",
+        "-vf",
+        THUMB_SCALE,
+        destPath,
+      ],
+      { stdin: bytes, stdout: "pipe", stderr: "pipe" },
+    );
+    try {
+      const [stderr, exitCode] = await Promise.all([
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      if (exitCode !== 0) {
+        log.warn(
+          { url, exitCode, stderr: stderr.slice(0, 500) },
+          "thumbnail-from-url ffmpeg failed",
+        );
+        return false;
+      }
+      return true;
+    } catch (err) {
+      log.warn({ url, err }, "thumbnail-from-url unavailable");
+      return false;
+    }
+  }
+}
+
+/** Shared with makeThumbnail so source posters and frame-grabs match shape. */
+const THUMB_SCALE = "scale='min(640,iw)':-2";
+
+/** Reject a poster larger than this before decoding; a thumbnail is small. */
+const POSTER_MAX_BYTES = 16 * 1024 * 1024;
+/** Give up on a slow poster host rather than stall finalize. */
+const POSTER_TIMEOUT_MS = 10_000;
+
+/**
+ * Fetches a remote poster into memory with hostile-URL guards: https-only (no
+ * file://, no plaintext), a hard byte cap read incrementally, and a timeout.
+ * Returns the bytes, or null on any failure. Never throws.
+ */
+async function fetchPoster(url: string): Promise<Uint8Array | null> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  // https only: blocks file://, and plaintext that could be redirected/MITM'd.
+  if (parsed.protocol !== "https:") {
+    log.warn({ url }, "poster url rejected: not https");
+    return null;
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), POSTER_TIMEOUT_MS);
+  try {
+    const res = await fetch(parsed, {
+      signal: controller.signal,
+      redirect: "follow",
+      headers: { accept: "image/*" },
+    });
+    if (!res.ok || !res.body) {
+      log.warn({ url, status: res.status }, "poster fetch failed");
+      return null;
+    }
+    // Read incrementally so a lying/absent Content-Length can't blow past the
+    // cap — abort as soon as the accumulated size crosses it.
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > POSTER_MAX_BYTES) {
+        controller.abort();
+        log.warn({ url, total }, "poster exceeded size cap");
+        return null;
+      }
+      chunks.push(value);
+    }
+    return Buffer.concat(chunks);
+  } catch (err) {
+    log.warn({ url, err }, "poster fetch errored");
+    return null;
+  } finally {
+    clearTimeout(timer);
   }
 }

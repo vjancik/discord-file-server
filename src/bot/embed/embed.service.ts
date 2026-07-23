@@ -12,7 +12,12 @@ import { createLogger } from "@/lib/logger";
 import { formatBytes } from "@/lib/units";
 import type { EmbedSourceInput } from "@/server/embeds/source.repository";
 import type { DiscordProfile } from "../identity";
-import { type Candidate, type ProbeInfo, planEmbed } from "./selection";
+import {
+  type Candidate,
+  type ProbeInfo,
+  pickThumbnail,
+  planEmbed,
+} from "./selection";
 import {
   TusUploadError,
   type TusUploadResult,
@@ -52,6 +57,7 @@ export type UploadFn = (opts: {
   filePath: string;
   fileName: string;
   mimeType: string;
+  sourceThumbnailUrl?: string;
   token: () => string;
   onQueued?: (reason: string) => void;
   signal?: AbortSignal;
@@ -248,11 +254,25 @@ export class EmbedService {
       uploadedAt: probeUploadDate(info),
     };
 
+    // Prefer the source's own poster over an ffmpeg frame-grab; the server
+    // falls back to the frame if this URL can't be fetched/decoded.
+    const sourceThumbnailUrl = pickThumbnail(info) ?? undefined;
+
     const jobDir = path.join(this.opts.scratchDir, crypto.randomUUID());
     mkdirSync(jobDir, { recursive: true });
     try {
       await this.download(
-        { url, title, choice, jobDir, perFileCap, userId, warned, source },
+        {
+          url,
+          title,
+          choice,
+          jobDir,
+          perFileCap,
+          userId,
+          warned,
+          source,
+          sourceThumbnailUrl,
+        },
         ui,
         signal,
       );
@@ -391,6 +411,7 @@ export class EmbedService {
       userId: string;
       warned: "over-limit" | "unknown" | "none";
       source: EmbedSourceInput;
+      sourceThumbnailUrl?: string;
     },
     ui: EmbedUi,
     signal?: AbortSignal,
@@ -479,6 +500,7 @@ export class EmbedService {
         mimeType:
           MIME_BY_EXT[path.extname(filePath).toLowerCase()] ??
           "application/octet-stream",
+        sourceThumbnailUrl: job.sourceThumbnailUrl,
         token: () => this.deps.mintToken(userId, check.sizeBytes),
         onQueued: () =>
           void ui.status(`⏳ **${title}** — waiting for staging space…`),

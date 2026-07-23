@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { DISCORDBOT_UA, fakeMp4Bytes, signUpAndIn } from "./helpers";
+import { DISCORDBOT_UA, signUpAndIn, testMp4Bytes } from "./helpers";
 
 test("unauthenticated visitors are redirected to /login", async ({ page }) => {
   await page.goto("/");
@@ -22,7 +22,7 @@ test("upload → share link resolves (browser + Discordbot) → delete kills the
     .setInputFiles({
       name: "e2e clip.mp4",
       mimeType: "video/mp4",
-      buffer: fakeMp4Bytes(),
+      buffer: testMp4Bytes(),
     });
   await page.getByRole("button", { name: /upload/i }).click();
 

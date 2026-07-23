@@ -1,3 +1,7 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { Page } from "@playwright/test";
 
 let seq = 0;
@@ -14,14 +18,35 @@ export async function signUpAndIn(page: Page): Promise<{ email: string }> {
   return { email };
 }
 
-// Small real MP4 header (ftyp box) so type sniffing sees video/mp4, padded so
-// the upload is non-trivial in size.
-export function fakeMp4Bytes(): Buffer {
-  const ftyp = Buffer.from([
-    0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0, 0, 2, 0,
-    0x69, 0x73, 0x6f, 0x6d, 0x69, 0x73, 0x6f, 0x32,
-  ]);
-  return Buffer.concat([ftyp, Buffer.alloc(64 * 1024)]);
+// A real (tiny) MP4: finalize now remuxes video uploads to strip metadata,
+// so a fake ftyp-plus-zeros fixture would be rejected by ffmpeg. ffmpeg is
+// already a hard e2e dependency (probe/thumbnail), so generate 1 s of testsrc
+// once per worker.
+let mp4Cache: Buffer | undefined;
+export function testMp4Bytes(): Buffer {
+  if (!mp4Cache) {
+    const file = path.join(
+      mkdtempSync(path.join(os.tmpdir(), "e2e-mp4-")),
+      "clip.mp4",
+    );
+    execFileSync("ffmpeg", [
+      "-v",
+      "error",
+      "-y",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc=duration=1:size=64x64:rate=10",
+      "-f",
+      "lavfi",
+      "-i",
+      "sine=frequency=440:duration=1",
+      "-shortest",
+      file,
+    ]);
+    mp4Cache = readFileSync(file);
+  }
+  return mp4Cache;
 }
 
 export const DISCORDBOT_UA =

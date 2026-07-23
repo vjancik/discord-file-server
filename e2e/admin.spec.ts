@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { expect, test } from "@playwright/test";
-import { fakeMp4Bytes, signUpAndIn } from "./helpers";
+import { signUpAndIn, testMp4Bytes } from "./helpers";
 
 test("admin sees the review queue and can approve a pending file", async ({
   browser,
@@ -16,7 +16,7 @@ test("admin sees the review queue and can approve a pending file", async ({
     .setInputFiles({
       name: "review me.mp4",
       mimeType: "video/mp4",
-      buffer: fakeMp4Bytes(),
+      buffer: testMp4Bytes(),
     });
   await userPage.getByRole("button", { name: /upload/i }).click();
   await expect(userPage.locator("code", { hasText: "/s/" })).toBeVisible({

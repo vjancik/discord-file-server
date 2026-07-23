@@ -31,6 +31,11 @@ export type TusUploadOptions = {
   filePath: string;
   fileName: string;
   mimeType: string;
+  /**
+   * Source-provided poster URL (e.g. a social thumbnail). Passed as tus
+   * metadata so the server can prefer it over an ffmpeg frame-grab.
+   */
+  sourceThumbnailUrl?: string;
   /** Fresh service token per attempt — re-minted so 429 waits can outlive exp. */
   token: () => string;
   /** Called when staging admission says wait (429), with the server's reason. */
@@ -86,7 +91,13 @@ export async function tusUpload(
       method: "POST",
       headers: headers({
         "Upload-Length": String(size),
-        "Upload-Metadata": `filename ${enc(opts.fileName)},filetype ${enc(opts.mimeType)}`,
+        "Upload-Metadata": [
+          `filename ${enc(opts.fileName)}`,
+          `filetype ${enc(opts.mimeType)}`,
+          ...(opts.sourceThumbnailUrl
+            ? [`sourcethumbnail ${enc(opts.sourceThumbnailUrl)}`]
+            : []),
+        ].join(","),
       }),
       signal: opts.signal,
     });

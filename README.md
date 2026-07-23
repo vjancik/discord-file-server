@@ -42,6 +42,7 @@ As a bonus, the bot command `/embed_video` enables downloading videos from socia
 - **Post-moderation review**: uploads are live immediately with status `pending`, and the same pending files surface in two synchronized places: a preview-first review queue in the web admin UI (click a row to play it) with single and bulk approve/delete, and a running feed in the bot's admin channel where each pending file is posted with Approve/Reject buttons. Acting in either place reflects in the other. There's also a global file browser with filters that keeps deleted files visible as audit tombstones.
 - **Dynamic storage quotas**: a global storage budget divided among active users, recomputed at upload time, with an opt-in "auto-delete my oldest files to make room" mode. The exact allocation heuristic is deliberately simple for now and is expected to improve (WIP).
 - **File-type policy**: uploads are accepted broadly, but executables are turned away twice: by extension when the upload is created, and by magic-byte sniffing of the actual bytes before the file is published (the client-reported MIME type is never trusted).
+- **Metadata stripping**: EXIF GPS/device tags, document author names and similar embedded PII are removed at publish time (images, video, audio, PDF, Office documents, zip containers) - no re-encoding, on by default, two opt-out settings toggles. The upload page warns about formats that can't be cleaned. See [docs/metadata-stripping.md](docs/metadata-stripping.md).
 - **Ops hygiene**: Litestream streams the SQLite database to a replica continuously; abandoned partial uploads are garbage-collected; optional server-wide file expiry.
 
 ## Architecture
@@ -188,11 +189,13 @@ Discord OAuth setup: create an application at the [Discord developer portal](htt
 
 In dev (`NODE_ENV=development`) the link base defaults to `http://localhost:3000`, so `BASE_URL` can stay unset; data lands in the local `./.data/*` paths from `.env`. Everything else in the [configuration reference](#configuration-reference) applies to all environments.
 
+The finalize pipeline shells out to a few host binaries: **ffmpeg/ffprobe** (probe, thumbnails, media metadata strip) and **exiftool + qpdf** (image/PDF metadata strip). The Docker images ship them; on a dev host install them once (`sudo apt-get install ffmpeg libimage-exiftool-perl qpdf`) — without them, uploads of the affected types are rejected (stripping fails closed) and the strip integration tests skip.
+
 Useful scripts: `typecheck`, `codecheck` / `codecheck:fix` (Biome), `test`, `test:e2e`, `prod:up` / `prod:down`, and `tunnel:up` / `tunnel:dev` / `tunnel:down` (see [deploying over a Cloudflare Tunnel](#deploying-over-a-cloudflare-tunnel)).
 
 ## Testing
 
-- **Unit + integration**: `bun run test` (~80 tests) covers quota math and divisor edge cases, type policy and executable sniffing, OG tag generation, UA detection, tombstone semantics, repositories against real temp SQLite files, and the finalize pipeline against temp directories with a fake prober.
+- **Unit + integration**: `bun run test` (~290 tests) covers quota math and divisor edge cases, type policy and executable sniffing, OG tag generation, UA detection, tombstone semantics, repositories against real temp SQLite files, and the finalize pipeline against temp directories with a fake prober. The metadata-strip strategies are additionally tested against the real ffmpeg/exiftool/qpdf binaries (skipped per missing tool locally, always run in CI — see [Development](#development) for the install line).
 - **Component**: same runner, via happy-dom + Testing Library: the delete-confirmation dialog (including the "don't ask again" persistence) and dashboard table states.
 - **End-to-end**: `bun run test:e2e` (Playwright) boots a dedicated server with a throwaway database and drives the real flows: sign-in, tus upload through Uppy, short-link resolution as both a browser (302) and Discordbot (OG page), deletion killing both URLs, admin review/approve, and admin-route 404s for non-admins. E2e auth uses an env-gated (`E2E_TEST_AUTH=1`) email/password path so no test bypass exists in application logic.
 - **Manual**: [docs/manual-embed-checklist.md](docs/manual-embed-checklist.md) covers what only Discord itself can verify: actual embed rendering per media type, the large-video card case, and mobile clipboard behavior.
@@ -295,6 +298,7 @@ Deeper write-ups live in [docs/](docs/):
 
 - [PRD.md](docs/PRD.md): the full product spec, with every design question and its resolution.
 - [capacity.md](docs/capacity.md): how staging admission, reservations, and disk-full handling keep concurrent uploads from filling a disk.
+- [metadata-stripping.md](docs/metadata-stripping.md): what embedded-PII removal covers per file type, what it deliberately doesn't, and the fail-closed/space rules it follows.
 - [current-limitations.md](docs/current-limitations.md): an honest self-assessment of the v1 implementation and its maturity gaps.
 - [embed-video.md](docs/embed-video.md): the `/embed_video` command spec and pipeline (yt-dlp download, format selection, watch page).
 - [embed-auth.md](docs/embed-auth.md): the service-token design that lets the bot upload to the app on a user's behalf.

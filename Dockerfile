@@ -73,6 +73,12 @@ FROM base AS web
 # ffmpeg/ffprobe are shelled out to by the upload finalize hook; same static
 # builds as the bot so both containers run identical ffmpeg versions.
 COPY --from=bot-tools /out/ffmpeg /out/ffprobe /usr/local/bin/
+# exiftool + qpdf: image/pdf metadata stripping in finalize (src/server/
+# metadata). Debian's versions are fine here — stable CLI surface, and both
+# ship identical amd64/arm64 builds (unlike qpdf's upstream releases).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libimage-exiftool-perl qpdf \
+    && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production
 RUN groupadd -g 1001 nodejs && useradd -m -u 1001 -g nodejs nextjs

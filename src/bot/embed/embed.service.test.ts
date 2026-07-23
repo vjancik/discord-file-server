@@ -182,6 +182,26 @@ describe("EmbedService flow", () => {
     expect(ui.finished).toContain("/s/a");
   });
 
+  test("passes the best source thumbnail url to the upload", async () => {
+    probeInfo = smallInfo({
+      formats: probeInfo.formats?.filter((f) => f.format_id !== "137"),
+      thumbnails: [
+        { url: "https://cdn.test/low.jpg", width: 320, preference: -10 },
+        { url: "https://cdn.test/best.jpg", width: 640, preference: 0 },
+      ],
+    });
+    await service().enqueue("https://x.test/v", INVOKER, ui);
+    expect(uploads[0].sourceThumbnailUrl).toBe("https://cdn.test/best.jpg");
+  });
+
+  test("no source thumbnail leaves the url undefined", async () => {
+    probeInfo = smallInfo({
+      formats: probeInfo.formats?.filter((f) => f.format_id !== "137"),
+    });
+    await service().enqueue("https://x.test/v", INVOKER, ui);
+    expect(uploads[0].sourceThumbnailUrl).toBeUndefined();
+  });
+
   test("missing optional probe fields fall back to nulls and the input url", async () => {
     probeInfo = smallInfo({
       formats: probeInfo.formats?.filter((f) => f.format_id !== "137"),

@@ -169,8 +169,9 @@ function createTusServer(): Server {
       // per upload id makes it await (or reuse) the original finalize
       // instead of racing it against the same staging file.
       return finalizeOnce.run(upload.id, async () => {
-        const { finalize } = getContainer();
+        const { finalize, settingsRepo } = getContainer();
         const stagingPath = (upload.storage as { path: string }).path;
+        const settings = settingsRepo.get(user.id);
 
         try {
           const row = await finalize.finalize({
@@ -179,6 +180,11 @@ function createTusServer(): Server {
             rawFileName: upload.metadata?.filename ?? "file",
             clientMime: upload.metadata?.filetype ?? undefined,
             sizeBytes: upload.size ?? 0,
+            sourceThumbnailUrl: upload.metadata?.sourcethumbnail ?? undefined,
+            strip: {
+              media: settings.stripMediaMetadata,
+              documents: settings.stripDocumentMetadata,
+            },
           });
           const { baseUrl } = getEnv();
           return {
