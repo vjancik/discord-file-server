@@ -21,6 +21,7 @@ function fileView(overrides: Partial<FileView> = {}): FileView {
     shortUrl: "http://localhost/s/code1234",
     canonicalUrl: "http://localhost/f/abc/clip.mp4",
     thumbnailUrl: null,
+    posterUrl: null,
     width: null,
     height: null,
     deletedAt: null,

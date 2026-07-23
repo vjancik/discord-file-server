@@ -61,6 +61,13 @@ export const files = sqliteTable(
     durationSeconds: integer("duration_seconds"),
     /** Path relative to STORAGE_DIR, e.g. "<id>/thumb.jpg"; null = no thumbnail. */
     thumbnailPath: text("thumbnail_path"),
+    /**
+     * Larger poster (≤1920px) for the /v player and /s embed card, e.g.
+     * "<id>/poster.jpg"; null when only the small thumbnail was made (older
+     * files, or the poster render failed). Consumers fall back to
+     * {@link thumbnailPath}.
+     */
+    posterPath: text("poster_path"),
     /** Outcome of the metadata-strip pipeline; see {@link METADATA_STATUSES}. */
     metadataStatus: text("metadata_status", { enum: METADATA_STATUSES })
       .notNull()

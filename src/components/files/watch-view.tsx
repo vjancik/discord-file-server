@@ -57,8 +57,8 @@ export function WatchView({
           playsInline
           preload="metadata"
           src={file.canonicalUrl}
-          poster={file.thumbnailUrl ?? undefined}
-          className="max-h-[70svh] w-full rounded-lg bg-black"
+          poster={file.posterUrl ?? undefined}
+          className="max-h-[70svh] w-full rounded-lg bg-black object-contain"
           style={{ aspectRatio }}
         />
       )}

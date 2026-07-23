@@ -19,6 +19,7 @@ function input(overrides: Partial<OgFileInput> = {}): OgFileInput {
     width: 1920,
     height: 1080,
     thumbnailPath: "abc123def456ghi789jk22/thumb.jpg",
+    posterPath: null,
     uploaderName: "vix",
     ...overrides,
   };
@@ -41,6 +42,18 @@ describe("buildOgHtml", () => {
     expect(html).toContain(
       '<meta property="og:url" content="https://files.example.com/s/s1s2s3s4">',
     );
+  });
+
+  test("og:image prefers the larger poster over the small thumbnail", () => {
+    const html = buildOgHtml(
+      input({ posterPath: "abc123def456ghi789jk22/poster.jpg" }),
+      BASE,
+      LIMIT,
+    );
+    expect(html).toContain(
+      `<meta property="og:image" content="${BASE}/f/abc123def456ghi789jk22/poster.jpg">`,
+    );
+    expect(html).not.toContain("thumb.jpg");
   });
 
   test("video without probe data omits dimension tags rather than emitting empty ones", () => {

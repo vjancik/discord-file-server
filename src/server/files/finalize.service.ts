@@ -61,33 +61,21 @@ export class FinalizeService {
     const info =
       kind === "other" ? {} : await this.prober.probe(input.stagingPath);
 
-    // Thumbnail is rendered from the staging copy (SSD) into the storage dir,
-    // then the file itself is moved (rename, or an atomic temp-name copy
-    // across devices — see FileStorage.copyIntoStorage).
+    // Thumbnail + poster are rendered from the staging copy (SSD) into the
+    // storage dir, then the file itself is moved (rename, or an atomic
+    // temp-name copy across devices — see FileStorage.copyIntoStorage).
     let thumbnailPath: string | null = null;
+    let posterPath: string | null = null;
 
     try {
       await mkdir(this.storage.dirFor(fileId), { recursive: true });
       if (kind === "video" || kind === "image") {
-        const thumbDest = this.storage.pathFor(fileId, "thumb.jpg");
-        // For videos, a source-provided poster (social embeds) usually beats a
-        // frame-grab — try it first, fall back to ffmpeg on any failure.
-        let made = false;
-        if (kind === "video" && input.sourceThumbnailUrl) {
-          made = await this.prober.thumbnailFromUrl(
-            input.sourceThumbnailUrl,
-            thumbDest,
-          );
-        }
-        if (!made) {
-          made = await this.prober.makeThumbnail(
-            input.stagingPath,
-            thumbDest,
-            kind,
-            info,
-          );
-        }
-        thumbnailPath = made ? path.posix.join(fileId, "thumb.jpg") : null;
+        ({ thumbnailPath, posterPath } = await this.renderPosters(
+          fileId,
+          kind,
+          info,
+          input,
+        ));
       }
       // Delivery into storage is the stripper's job: cleaned when the type +
       // settings allow it, a plain move otherwise. Fail closed on strip
@@ -122,6 +110,7 @@ export class FinalizeService {
         height: info.height ?? null,
         durationSeconds: info.durationSeconds ?? null,
         thumbnailPath,
+        posterPath,
         metadataStatus,
         expiresAt: this.opts.defaultExpiryMs
           ? new Date(Date.now() + this.opts.defaultExpiryMs)
@@ -138,4 +127,75 @@ export class FinalizeService {
       throw err;
     }
   }
+
+  /**
+   * Writes two derived JPEGs next to the file: a large `poster.jpg` (≤1920px)
+   * for the /v player and /s embed card, and a small `thumb.jpg` (≤640px) for
+   * the dashboard grid. The poster is rendered first — for videos preferring a
+   * source-provided poster URL (social embeds) over an ffmpeg frame-grab — then
+   * the thumb is downscaled from that poster (cheap image→image, no second
+   * video decode). If the poster can't be made, the thumb falls back to a
+   * direct frame-grab so the grid still has something. Either may end up null.
+   */
+  private async renderPosters(
+    fileId: string,
+    kind: "video" | "image",
+    info: Awaited<ReturnType<MediaProber["probe"]>>,
+    input: FinalizeInput,
+  ): Promise<{ thumbnailPath: string | null; posterPath: string | null }> {
+    const posterDest = this.storage.pathFor(fileId, "poster.jpg");
+    const thumbDest = this.storage.pathFor(fileId, "thumb.jpg");
+    const rel = (name: string) => path.posix.join(fileId, name);
+
+    // Poster first, preferring the source's own art for videos.
+    let posterMade = false;
+    if (kind === "video" && input.sourceThumbnailUrl) {
+      posterMade = await this.prober.thumbnailFromUrl(
+        input.sourceThumbnailUrl,
+        posterDest,
+        POSTER_MAX_WIDTH,
+      );
+    }
+    if (!posterMade) {
+      posterMade = await this.prober.makeThumbnail(
+        input.stagingPath,
+        posterDest,
+        kind,
+        info,
+        POSTER_MAX_WIDTH,
+      );
+    }
+
+    // Thumb: downscale the poster we just made (no re-fetch / re-decode); only
+    // fall back to a fresh frame-grab if the poster step produced nothing.
+    let thumbMade = false;
+    if (posterMade) {
+      thumbMade = await this.prober.makeThumbnail(
+        posterDest,
+        thumbDest,
+        "image",
+        info,
+        THUMB_MAX_WIDTH,
+      );
+    }
+    if (!thumbMade) {
+      thumbMade = await this.prober.makeThumbnail(
+        input.stagingPath,
+        thumbDest,
+        kind,
+        info,
+        THUMB_MAX_WIDTH,
+      );
+    }
+
+    return {
+      thumbnailPath: thumbMade ? rel("thumb.jpg") : null,
+      posterPath: posterMade ? rel("poster.jpg") : null,
+    };
+  }
 }
+
+/** Large poster for the /v player and /s embed card. */
+const POSTER_MAX_WIDTH = 1920;
+/** Small thumbnail for the dashboard grid/list. */
+const THUMB_MAX_WIDTH = 640;

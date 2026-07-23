@@ -30,3 +30,16 @@ export function thumbnailUrl(
 ): string | null {
   return file.thumbnailPath ? `${baseUrl}/f/${file.thumbnailPath}` : null;
 }
+
+/**
+ * Larger poster (≤1920px) for the /v player and /s embed card. Falls back to
+ * the small thumbnail for files predating the poster (or whose poster render
+ * failed), so callers always get the best available image.
+ */
+export function posterUrl(
+  baseUrl: string,
+  file: Pick<FileRow, "id" | "posterPath" | "thumbnailPath">,
+): string | null {
+  const posterPath = file.posterPath ?? file.thumbnailPath;
+  return posterPath ? `${baseUrl}/f/${posterPath}` : null;
+}

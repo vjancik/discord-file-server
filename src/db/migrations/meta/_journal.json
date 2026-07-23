@@ -43,6 +43,13 @@
       "when": 1784816761501,
       "tag": "0005_metadata_status",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1784818333734,
+      "tag": "0006_ancient_nightshade",
+      "breakpoints": true
     }
   ]
 }

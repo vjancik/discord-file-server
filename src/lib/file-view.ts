@@ -1,6 +1,7 @@
 import type { EmbedSourceRow, FileRow } from "@/db/schema";
 import {
   canonicalUrl,
+  posterUrl,
   shortUrl,
   thumbnailUrl,
   watchUrl,
@@ -28,6 +29,8 @@ export interface FileView {
   shortUrl: string;
   canonicalUrl: string;
   thumbnailUrl: string | null;
+  /** Larger poster for the video player; falls back to thumbnailUrl. */
+  posterUrl: string | null;
   width: number | null;
   height: number | null;
   ownerName?: string;
@@ -52,6 +55,7 @@ export function toFileView(
     shortUrl: shortUrl(baseUrl, file),
     canonicalUrl: canonicalUrl(baseUrl, file),
     thumbnailUrl: thumbnailUrl(baseUrl, file),
+    posterUrl: posterUrl(baseUrl, file),
     width: file.width,
     height: file.height,
     ownerName: file.owner?.name,

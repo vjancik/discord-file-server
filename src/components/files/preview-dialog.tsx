@@ -25,9 +25,9 @@ export function FilePreview({ file }: { file: FileView }) {
         // biome-ignore lint/a11y/useMediaCaption: user uploads have no caption tracks
         <video
           src={file.canonicalUrl}
-          poster={file.thumbnailUrl ?? undefined}
+          poster={file.posterUrl ?? undefined}
           controls
-          className="max-h-[70vh] w-full rounded-md bg-black"
+          className="max-h-[70vh] w-full rounded-md bg-black object-contain"
         />
       );
     case "image":

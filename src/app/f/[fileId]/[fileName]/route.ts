@@ -18,15 +18,17 @@ export async function GET(
   const file = fileRepo.findLiveById(fileId);
   if (!file) return new Response("Not found", { status: 404 });
 
-  // Thumbnail lives in the same directory and has no DB row of its own.
-  const isThumbnail = file.thumbnailPath && requestedName === "thumb.jpg";
+  // Derived images live in the same directory and have no DB row of their own.
+  const isThumbnail =
+    (file.thumbnailPath && requestedName === "thumb.jpg") ||
+    (file.posterPath && requestedName === "poster.jpg");
   if (!isThumbnail && requestedName !== file.fileName) {
     return new Response("Not found", { status: 404 });
   }
 
   const diskPath = storage.pathFor(
     fileId,
-    isThumbnail ? "thumb.jpg" : file.fileName,
+    isThumbnail ? requestedName : file.fileName,
   );
   let size: number;
   try {

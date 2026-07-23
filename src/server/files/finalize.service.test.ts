@@ -98,28 +98,32 @@ describe("FinalizeService", () => {
     expect(row.durationSeconds).toBe(42);
     expect(row.shortCode).toHaveLength(8);
     expect(row.thumbnailPath).toBe(`${row.id}/thumb.jpg`);
+    expect(row.posterPath).toBe(`${row.id}/poster.jpg`);
     expect(row.expiresAt).toBeNull();
 
     expect(existsSync(storage.pathFor(row.id, "My Clip.mp4"))).toBe(true);
     expect(existsSync(storage.pathFor(row.id, "thumb.jpg"))).toBe(true);
+    expect(existsSync(storage.pathFor(row.id, "poster.jpg"))).toBe(true);
     expect(existsSync(staging)).toBe(false); // moved out of staging
     expect(repo.findLiveById(row.id)?.id).toBe(row.id);
   });
 
-  test("video: source thumbnail is preferred over the ffmpeg frame-grab", async () => {
+  test("video: source poster is fetched at 1920px, thumb downscaled from it", async () => {
     const staging = await stageFile("upload-thumb-src", MP4_HEAD);
     const calls: string[] = [];
     const prober: MediaProber = {
       ...fakeProber(),
-      async thumbnailFromUrl(url, dest) {
-        calls.push(`fromUrl:${url}`);
+      async thumbnailFromUrl(url, dest, maxWidth) {
+        calls.push(`fromUrl:${path.basename(dest)}@${maxWidth}:${url}`);
         await Bun.write(dest, "poster-jpeg");
         return true;
       },
-      async makeThumbnail(_src, dest, kind) {
-        calls.push("frameGrab");
+      async makeThumbnail(src, dest, _kind, _info, maxWidth) {
+        calls.push(
+          `grab:${path.basename(src)}->${path.basename(dest)}@${maxWidth}`,
+        );
         await Bun.write(dest, "fake-jpeg");
-        return kind === "video" || kind === "image";
+        return true;
       },
     };
     const service = new FinalizeService(repo, storage, prober, passStripper());
@@ -133,24 +137,32 @@ describe("FinalizeService", () => {
       sourceThumbnailUrl: "https://cdn.test/poster.jpg",
     });
 
-    expect(calls).toEqual(["fromUrl:https://cdn.test/poster.jpg"]);
+    // Poster from the source URL at 1920; thumb downscaled from that poster (no
+    // frame-grab of the video at all).
+    expect(calls).toEqual([
+      "fromUrl:poster.jpg@1920:https://cdn.test/poster.jpg",
+      "grab:poster.jpg->thumb.jpg@640",
+    ]);
+    expect(row.posterPath).toBe(`${row.id}/poster.jpg`);
     expect(row.thumbnailPath).toBe(`${row.id}/thumb.jpg`);
+    expect(existsSync(storage.pathFor(row.id, "poster.jpg"))).toBe(true);
     expect(existsSync(storage.pathFor(row.id, "thumb.jpg"))).toBe(true);
   });
 
-  test("video: falls back to the frame-grab when the source thumbnail fails", async () => {
+  test("video: falls back to a frame-grab poster when the source url fails", async () => {
     const staging = await stageFile("upload-thumb-fallback", MP4_HEAD);
     const calls: string[] = [];
     const prober: MediaProber = {
       ...fakeProber(),
-      async thumbnailFromUrl(url) {
-        calls.push(`fromUrl:${url}`);
+      async thumbnailFromUrl() {
         return false; // unreachable / undecodable poster
       },
-      async makeThumbnail(_src, dest, kind) {
-        calls.push("frameGrab");
+      async makeThumbnail(src, dest, _kind, _info, maxWidth) {
+        calls.push(
+          `grab:${path.basename(src)}->${path.basename(dest)}@${maxWidth}`,
+        );
         await Bun.write(dest, "fake-jpeg");
-        return kind === "video" || kind === "image";
+        return true;
       },
     };
     const service = new FinalizeService(repo, storage, prober, passStripper());
@@ -164,7 +176,46 @@ describe("FinalizeService", () => {
       sourceThumbnailUrl: "https://cdn.test/poster.jpg",
     });
 
-    expect(calls).toEqual(["fromUrl:https://cdn.test/poster.jpg", "frameGrab"]);
+    // Poster frame-grab from the video at 1920, then thumb downscaled from it.
+    expect(calls).toEqual([
+      "grab:upload-thumb-fallback->poster.jpg@1920",
+      "grab:poster.jpg->thumb.jpg@640",
+    ]);
+    expect(row.posterPath).toBe(`${row.id}/poster.jpg`);
+    expect(row.thumbnailPath).toBe(`${row.id}/thumb.jpg`);
+  });
+
+  test("thumb falls back to a direct frame-grab when the poster can't be made", async () => {
+    const staging = await stageFile("upload-thumb-noposter", MP4_HEAD);
+    const calls: string[] = [];
+    const prober: MediaProber = {
+      ...fakeProber(),
+      async thumbnailFromUrl() {
+        return false;
+      },
+      async makeThumbnail(src, dest, _kind, _info, maxWidth) {
+        // Poster step (1920) fails; the 640 thumb from the source succeeds.
+        if (maxWidth === 1920) return false;
+        calls.push(
+          `grab:${path.basename(src)}->${path.basename(dest)}@${maxWidth}`,
+        );
+        await Bun.write(dest, "fake-jpeg");
+        return true;
+      },
+    };
+    const service = new FinalizeService(repo, storage, prober, passStripper());
+
+    const row = await service.finalize({
+      stagingPath: staging,
+      ownerId: owner,
+      rawFileName: "clip.mp4",
+      clientMime: "video/mp4",
+      sizeBytes: MP4_HEAD.length,
+    });
+
+    // Poster attempt failed → thumb comes straight from the staging video.
+    expect(calls).toEqual(["grab:upload-thumb-noposter->thumb.jpg@640"]);
+    expect(row.posterPath).toBeNull();
     expect(row.thumbnailPath).toBe(`${row.id}/thumb.jpg`);
   });
 

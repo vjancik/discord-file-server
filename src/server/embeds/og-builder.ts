@@ -1,6 +1,6 @@
 import type { FileRow } from "@/db/schema";
 import { formatBytes } from "@/lib/units";
-import { canonicalUrl, shortUrl, thumbnailUrl } from "../links/urls";
+import { canonicalUrl, posterUrl, shortUrl } from "../links/urls";
 
 function escapeHtml(value: string): string {
   return value
@@ -35,6 +35,7 @@ export interface OgFileInput
     | "width"
     | "height"
     | "thumbnailPath"
+    | "posterPath"
   > {
   uploaderName: string;
   /** /embed_video source metadata; when present the card carries the real title. */
@@ -93,7 +94,9 @@ export function buildOgHtml(
 ): string {
   const canonical = canonicalUrl(baseUrl, file);
   const short = shortUrl(baseUrl, file);
-  const thumb = thumbnailUrl(baseUrl, file);
+  // Discord's large-image card wants the biggest poster we have; falls back to
+  // the small thumbnail for files predating the poster.
+  const thumb = posterUrl(baseUrl, file);
   const description = file.source?.description
     ? trimCardDescription(file.source.description)
     : `${formatBytes(file.sizeBytes)} — uploaded by ${file.uploaderName}`;

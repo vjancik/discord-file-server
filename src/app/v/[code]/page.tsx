@@ -7,7 +7,7 @@ import { getEnv } from "@/lib/env";
 import { toFileView } from "@/lib/file-view";
 import { getContainer } from "@/server/container";
 import { trimCardDescription } from "@/server/embeds/og-builder";
-import { canonicalUrl, thumbnailUrl } from "@/server/links/urls";
+import { canonicalUrl, posterUrl } from "@/server/links/urls";
 
 type Params = { params: Promise<{ code: string }> };
 
@@ -26,7 +26,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const found = findLiveFile(code);
   if (!found?.source) return { robots: { index: false } };
   const { file, source } = found;
-  const thumb = thumbnailUrl(getEnv().baseUrl, file);
+  const thumb = posterUrl(getEnv().baseUrl, file);
   const description = source.description
     ? trimCardDescription(source.description)
     : undefined;

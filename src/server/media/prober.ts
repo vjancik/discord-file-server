@@ -13,20 +13,30 @@ export interface MediaInfo {
  */
 export interface MediaProber {
   probe(filePath: string): Promise<MediaInfo>;
-  /** Writes a poster/thumbnail JPEG; resolves false when none can be made (e.g. audio). */
+  /**
+   * Writes a poster/thumbnail JPEG downscaled to at most `maxWidth` px (never
+   * upscaled past the source); resolves false when none can be made (e.g.
+   * audio). Called once per size the caller wants (small thumb + large poster).
+   */
   makeThumbnail(
     sourcePath: string,
     destPath: string,
     kind: FileKind,
     info: MediaInfo,
+    maxWidth: number,
   ): Promise<boolean>;
   /**
    * Fetches a remote poster (e.g. a social source's own thumbnail) and writes
-   * it as a normalized JPEG at `destPath`. Resolves false on any failure
-   * (unreachable, oversized, undecodable) so the caller can fall back to a
-   * frame-grab. Best-effort and safe against a hostile URL — never throws.
+   * it as a normalized JPEG at `destPath`, downscaled to at most `maxWidth` px.
+   * Resolves false on any failure (unreachable, oversized, undecodable) so the
+   * caller can fall back to a frame-grab. Safe against a hostile URL — never
+   * throws.
    */
-  thumbnailFromUrl(url: string, destPath: string): Promise<boolean>;
+  thumbnailFromUrl(
+    url: string,
+    destPath: string,
+    maxWidth: number,
+  ): Promise<boolean>;
 }
 
 const log = createLogger("prober");
@@ -97,6 +107,7 @@ export class FfmpegProber implements MediaProber {
     destPath: string,
     kind: FileKind,
     info: MediaInfo,
+    maxWidth: number,
   ): Promise<boolean> {
     if (kind !== "video" && kind !== "image") return false;
     const args = ["ffmpeg", "-v", "error", "-y"];
@@ -105,18 +116,30 @@ export class FfmpegProber implements MediaProber {
       const seek = Math.min(5, (info.durationSeconds ?? 0) * 0.1);
       args.push("-ss", seek.toFixed(2));
     }
-    args.push("-i", sourcePath, "-frames:v", "1", "-vf", THUMB_SCALE, destPath);
+    args.push(
+      "-i",
+      sourcePath,
+      "-frames:v",
+      "1",
+      "-vf",
+      thumbScale(maxWidth),
+      destPath,
+    );
     const { ok } = await run(args);
     return ok;
   }
 
-  async thumbnailFromUrl(url: string, destPath: string): Promise<boolean> {
+  async thumbnailFromUrl(
+    url: string,
+    destPath: string,
+    maxWidth: number,
+  ): Promise<boolean> {
     const bytes = await fetchPoster(url);
     if (!bytes) return false;
-    // Decode from stdin and normalize to the same ≤640px JPEG makeThumbnail
-    // produces, so /f/.../thumb.jpg and the OG card are shape-consistent. A
-    // non-image (HTML error page, truncated bytes) makes ffmpeg exit non-zero,
-    // which run() reports as ok:false — the frame-grab fallback then applies.
+    // Decode from stdin and normalize to a downscaled JPEG so the poster/thumb
+    // are shape-consistent with the ffmpeg frame-grab. A non-image (HTML error
+    // page, truncated bytes) makes ffmpeg exit non-zero, which run() reports as
+    // ok:false — the frame-grab fallback then applies.
     const proc = Bun.spawn(
       [
         "ffmpeg",
@@ -128,7 +151,7 @@ export class FfmpegProber implements MediaProber {
         "-frames:v",
         "1",
         "-vf",
-        THUMB_SCALE,
+        thumbScale(maxWidth),
         destPath,
       ],
       { stdin: bytes, stdout: "pipe", stderr: "pipe" },
@@ -153,8 +176,12 @@ export class FfmpegProber implements MediaProber {
   }
 }
 
-/** Shared with makeThumbnail so source posters and frame-grabs match shape. */
-const THUMB_SCALE = "scale='min(640,iw)':-2";
+/**
+ * ffmpeg scale filter: cap width at `maxWidth`, never upscale (min with input
+ * width), keep aspect with an even height (-2). Shared by frame-grabs and
+ * source posters so every derived image matches shape.
+ */
+const thumbScale = (maxWidth: number) => `scale='min(${maxWidth},iw)':-2`;
 
 /** Reject a poster larger than this before decoding; a thumbnail is small. */
 const POSTER_MAX_BYTES = 16 * 1024 * 1024;
