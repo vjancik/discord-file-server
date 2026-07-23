@@ -9,8 +9,6 @@ import { getContainer } from "@/server/container";
 import { trimCardDescription } from "@/server/embeds/og-builder";
 import { canonicalUrl, thumbnailUrl } from "@/server/links/urls";
 
-export const dynamic = "force-dynamic";
-
 type Params = { params: Promise<{ code: string }> };
 
 /** Same liveness rules as /s: tombstoned or expired short links are dead. */

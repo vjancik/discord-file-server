@@ -15,6 +15,13 @@
 		@nonmedia not path_regexp \.(mp4|m4v|webm|mov|mkv|avi|png|jpe?g|gif|webp|avif|bmp|tiff|heic|heif|mp3|wav|ogg|oga|opus|flac|m4a|aac)$
 		header @nonmedia Content-Disposition attachment
 
+		# /f/* URLs are content-addressed (fileId + fileName), so bytes for a
+		# given URL never change — cache hard. A deleted file 404s from the
+		# origin regardless, and the app hands out fresh URLs, so no stale
+		# content leaks. Caddy's file_server still sets ETag/Last-Modified and
+		# honors Range/conditional GETs on top of this.
+		header Cache-Control "public, max-age=31536000, immutable"
+
 		# No `browse` directive: directory listing stays off (PRD §8).
 		file_server
 	}

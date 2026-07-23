@@ -37,6 +37,10 @@ export async function GET(
       headers: {
         "Content-Type": "text/html; charset=utf-8",
         "X-Robots-Tag": "noindex",
+        // Absorb Discord's re-crawl bursts without letting a deleted/expired
+        // file keep unfurling: the OG HTML is deterministic for a live code,
+        // and 5 min bounds how long revocation takes to propagate.
+        "Cache-Control": "public, max-age=300",
       },
     });
   }
