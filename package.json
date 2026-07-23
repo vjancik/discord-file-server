@@ -29,7 +29,7 @@
     "@uppy/dashboard": "^5.1.1",
     "@uppy/react": "^5.2.0",
     "@uppy/tus": "^5.1.1",
-    "better-auth": "^1.6.24",
+    "better-auth": "^1.6.25",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "discord.js": "^14.27.0",
