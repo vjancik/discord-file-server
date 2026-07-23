@@ -5,8 +5,11 @@ FROM oven/bun:1.3-slim AS base
 FROM base AS builder
 WORKDIR /app
 
+# Per-arch cache id matches the cache-map ids CI restores via
+# buildkit-cache-dance (.github/workflows/test-and-build.yml).
+ARG TARGETARCH
 COPY package.json bun.lock ./
-RUN --mount=type=cache,target=/root/.bun/install/cache \
+RUN --mount=type=cache,id=bun-$TARGETARCH,target=/root/.bun/install/cache \
     bun install --frozen-lockfile
 
 COPY . .
@@ -99,8 +102,9 @@ RUN groupadd -g 1001 nodejs && useradd -m -u 1001 -g nodejs nextjs
 COPY --from=bot-tools /out/yt-dlp /out/deno /out/ffmpeg /out/ffprobe /usr/local/bin/
 
 WORKDIR /app
+ARG TARGETARCH
 COPY package.json bun.lock ./
-RUN --mount=type=cache,target=/root/.bun/install/cache \
+RUN --mount=type=cache,id=bun-$TARGETARCH,target=/root/.bun/install/cache \
     bun install --frozen-lockfile --production
 COPY tsconfig.json ./
 COPY src ./src

@@ -1,0 +1,202 @@
+name: Test and Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'main'
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - 'main'
+
+permissions:
+  contents: read
+
+# Superseded pushes to the same branch/PR cancel the older run; tag builds
+# never cancel each other (group includes the ref).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: ".bun-version"
+
+      - name: Install dependencies
+        run: bun ci
+
+      # Route/typed-env definitions normally emitted by `next build`/`next dev`;
+      # tsconfig includes them, so generate before typechecking.
+      - name: Generate Next.js types
+        run: bun --bun next typegen
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Lint
+        run: bun run codecheck
+
+      - name: Run tests
+        run: bun run test --coverage --coverage-reporter=lcov
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          files: ./coverage/lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: ".bun-version"
+
+      - name: Install dependencies
+        run: bun ci
+
+      - name: Install Playwright Chromium
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run e2e tests
+        run: bun run test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  # Builds both runtime targets of the Dockerfile. PRs build amd64-only as a
+  # smoke test (no push, no attestations); main/tags push multi-arch to GHCR.
+  docker-build-push:
+    needs: [tests, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Docker extract build metadata (web)
+        id: meta-web
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
+
+      - name: Docker extract build metadata (bot)
+        id: meta-bot
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}-bot
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
+
+      - name: Login to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU
+        if: github.event_name != 'pull_request'
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        id: setup-buildx
+
+      - name: Cache bun store (amd64)
+        uses: actions/cache@v6
+        with:
+          path: bun-cache-amd64
+          key: bun-amd64-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-amd64-
+
+      - name: Cache bun store (arm64)
+        if: github.event_name != 'pull_request'
+        uses: actions/cache@v6
+        with:
+          path: bun-cache-arm64
+          key: bun-arm64-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-arm64-
+
+      # Cache ids must match the `id=bun-$TARGETARCH` mounts in the Dockerfile.
+      - name: Restore cache mounts into BuildKit
+        uses: vjancik/buildkit-cache-dance@v1
+        with:
+          builder: ${{ steps.setup-buildx.outputs.name }}
+          cache-map: |
+            {
+              "bun-cache-amd64": { "target": "/root/.bun/install/cache", "id": "bun-amd64" },
+              "bun-cache-arm64": { "target": "/root/.bun/install/cache", "id": "bun-arm64" }
+            }
+
+      - name: Build and push web image
+        id: push-web
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: web
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-web.outputs.tags }}
+          labels: ${{ steps.meta-web.outputs.labels }}
+          annotations: ${{ steps.meta-web.outputs.annotations }}
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+          provenance: mode=max
+          sbom: true
+
+      - name: Build and push bot image
+        id: push-bot
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: bot
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-bot.outputs.tags }}
+          labels: ${{ steps.meta-bot.outputs.labels }}
+          annotations: ${{ steps.meta-bot.outputs.annotations }}
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          cache-from: type=gha,scope=bot
+          cache-to: type=gha,mode=max,scope=bot
+          provenance: mode=max
+          sbom: true
+
+      - name: Attest web image
+        if: github.event_name != 'pull_request'
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.push-web.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest bot image
+        if: github.event_name != 'pull_request'
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository }}-bot
+          subject-digest: ${{ steps.push-bot.outputs.digest }}
+          push-to-registry: true

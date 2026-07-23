@@ -1,5 +1,8 @@
 # Discord File Server
 
+[![Test and Build](https://github.com/vjancik/discord-file-server/actions/workflows/test-and-build.yml/badge.svg?branch=main)](https://github.com/vjancik/discord-file-server/actions/workflows/test-and-build.yml)
+[![codecov](https://codecov.io/gh/vjancik/discord-file-server/graph/badge.svg?token=ZPRLREH7P3)](https://codecov.io/gh/vjancik/discord-file-server)
+
 A self-hosted file sharing service built to get around Discord's upload limits. Members of an allowed Discord server sign in with Discord, upload large files through a resumable-upload UI, and get short links that embed properly when pasted back into Discord: an inline video player with scrubbing, and image previews. Files are served directly off disk, so the JS runtime stays out of the way of large downloads and the whole thing runs comfortably on a single machine at home.
 
 As a bonus, the bot command `/embed_video` enables downloading videos from social media URLs (with `yt-dlp`), uploading them to your file server storage directly and returning back an embeddable short URL.
