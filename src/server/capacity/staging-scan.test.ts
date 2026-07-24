@@ -50,6 +50,32 @@ describe("scanStaging", () => {
     expect(scan.orphanBytes).toBeGreaterThanOrEqual(6);
   });
 
+  test("pairs an extension-carrying data file with its sidecar", async () => {
+    // tus now names the staging file <id>.<ext>; its sidecar is <id>.<ext>.json.
+    await writeUpload("9f8a7c.jpg", 5000, "alice");
+
+    const scan = await scanStaging(tmp);
+
+    expect(scan.uploads).toHaveLength(1);
+    expect(scan.uploads[0]).toMatchObject({
+      id: "9f8a7c.jpg",
+      ownerId: "alice",
+    });
+    expect(scan.orphans).toHaveLength(0);
+  });
+
+  test("a .json-extensioned upload is a data file, not a sidecar", async () => {
+    // Uploading notes.json → data file <id>.json, sidecar <id>.json.json.
+    // The data file must never be mistaken for a sidecar and orphaned.
+    await writeUpload("7c6b.json", 3000, "bob");
+
+    const scan = await scanStaging(tmp);
+
+    expect(scan.uploads).toHaveLength(1);
+    expect(scan.uploads[0]).toMatchObject({ id: "7c6b.json", sizeBytes: 3000 });
+    expect(scan.orphans).toHaveLength(0);
+  });
+
   test("skips pairs whose sidecar cannot be parsed (may be mid-write)", async () => {
     await Bun.write(path.join(tmp, "u2"), "data");
     await Bun.write(path.join(tmp, "u2.json"), "{not json");

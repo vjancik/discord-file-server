@@ -5,8 +5,14 @@ import type { StagingLedger } from "./staging-ledger";
 
 const log = createLogger("staging-scan");
 
-/** A tus upload present in the staging dir: `<id>` data file + `<id>.json` sidecar. */
+/**
+ * A tus upload present in the staging dir: a data file plus its `<data>.json`
+ * sidecar. The data file's name is the tus upload id, which now carries the
+ * source extension (e.g. `<uuid>.jpg`), so the sidecar is `<uuid>.jpg.json`;
+ * the pairing below is pure suffix logic and is agnostic to that extension.
+ */
 export interface ScannedUpload {
+  /** The tus upload id = the data filename (may include a `.<ext>` suffix). */
   id: string;
   /** Declared full size from the sidecar (0 when absent/deferred). */
   sizeBytes: number;
@@ -48,7 +54,7 @@ interface SidecarShape {
 
 /**
  * One consistent snapshot of the staging dir, pairing FileStore data files
- * with their `<id>.json` sidecars. Entries that vanish mid-scan (raced by an
+ * with their `<data>.json` sidecars. Entries that vanish mid-scan (raced by an
  * active upload, GC, or finalize) are skipped; a sidecar that fails to parse
  * is skipped entirely rather than misclassified as an orphan, since it may be
  * mid-write by a concurrent create.
@@ -68,18 +74,15 @@ export async function scanStaging(stagingDir: string): Promise<StagingScan> {
 
   for (const entry of entries) {
     const filePath = path.join(stagingDir, entry);
-    if (entry.endsWith(".json")) {
-      const id = entry.slice(0, -".json".length);
-      if (names.has(id)) continue; // handled with its data file below
-      const info = await statSafe(filePath);
-      if (info) {
-        orphans.push({
-          filePath,
-          sizeBytes: info.size,
-          mtimeMs: info.mtimeMs,
-        });
-      }
-      continue;
+
+    // A `.json` entry is the tus sidecar for data file `<stripped>` only when
+    // that data file exists — then it's handled alongside it below. Since the
+    // data file may itself carry a `.json` extension (a `notes.json` upload is
+    // stored as `<id>.json`, its sidecar as `<id>.json.json`), we can't assume
+    // every `.json` entry is a sidecar: if the stripped name is absent, this
+    // entry *is* a data file and must be classified as one, not orphaned.
+    if (entry.endsWith(".json") && names.has(entry.slice(0, -".json".length))) {
+      continue; // sidecar; paired with its data file
     }
 
     const dataInfo = await statSafe(filePath);
@@ -87,6 +90,9 @@ export async function scanStaging(stagingDir: string): Promise<StagingScan> {
 
     const sidecarPath = `${filePath}.json`;
     if (!names.has(`${entry}.json`)) {
+      // No sidecar: an orphan data file (this also covers a `.json` entry whose
+      // stripped name is absent and has no sidecar of its own — a lone leftover
+      // sidecar from a vanished data file).
       orphans.push({
         filePath,
         sizeBytes: dataInfo.size,

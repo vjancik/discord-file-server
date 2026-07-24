@@ -1,7 +1,9 @@
+import { randomBytes } from "node:crypto";
 import { unlink } from "node:fs/promises";
 import { FileStore } from "@tus/file-store";
 import { EVENTS, Server, type Upload } from "@tus/server";
 import { auth } from "@/auth/auth";
+import { extensionOf } from "@/lib/blocked-extensions";
 import { getEnv } from "@/lib/env";
 import { createLogger } from "@/lib/logger";
 import { getContainer } from "@/server/container";
@@ -11,6 +13,40 @@ import { verifyServiceToken } from "./service-token";
 import { SingleFlight } from "./single-flight";
 
 const log = createLogger("tus");
+
+/**
+ * tus stores completed uploads under a bare random id, which leaves the
+ * staging data file with no extension. Downstream tools that key off the
+ * extension then misbehave — exiftool tries to *create* a JPEG from scratch
+ * ("Can't create JPEG files from scratch") instead of copying an extensionless
+ * source. Appending the real extension keeps the whole pipeline's intermediate
+ * files self-describing and inspectable; the sidecar tus writes alongside is
+ * `<id>.json`, so it becomes `<id>.<ext>.json` and the pair still matches on
+ * suffix (see scanStaging).
+ *
+ * The extension is derived from the untrusted client filename, so it is
+ * hard-sanitised to a short lowercase-alphanumeric token before it can touch a
+ * path — never trust it to be free of separators or dots.
+ */
+export function stagingNamingFunction(
+  metadata?: Record<string, string | null>,
+): string {
+  const id = randomBytes(16).toString("hex");
+  const ext = safeExt(metadata?.filename ?? undefined);
+  return ext ? `${id}.${ext}` : id;
+}
+
+/** Longest extension we bother preserving on the staging file (e.g. "jpeg"). */
+const MAX_STAGING_EXT_LEN = 12;
+
+function safeExt(fileName: string | undefined): string {
+  if (!fileName) return "";
+  // extensionOf already lowercases and strips to the last dot, but the client
+  // filename is untrusted: keep only [a-z0-9] so no separator, dot, or control
+  // character can ride into the staging path.
+  const cleaned = extensionOf(fileName).replace(/[^a-z0-9]/g, "");
+  return cleaned.slice(0, MAX_STAGING_EXT_LEN);
+}
 
 /**
  * How long a successful finalize response is kept for retries. A client whose
@@ -70,6 +106,9 @@ function createTusServer(): Server {
   return new Server({
     path: "/api/upload",
     datastore: new FileStore({ directory: env.STAGING_DIR }),
+    // Keep the real extension on the staging file so the pipeline's
+    // intermediate files stay self-describing (see stagingNamingFunction).
+    namingFunction: (_req, metadata) => stagingNamingFunction(metadata),
     // The staging file must not be deleted out from under a running finalize:
     // the per-upload lock is released before onUploadFinish runs, so a cancel
     // (DELETE) could otherwise race it. Once all bytes are in, termination is
