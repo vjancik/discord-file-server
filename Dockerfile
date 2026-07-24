@@ -14,6 +14,12 @@ RUN --mount=type=cache,id=bun-$TARGETARCH,target=/root/.bun/install/cache \
 
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# Build-stage-only placeholder: `next build` enumerates routes, which constructs
+# the Better Auth instance, and it warns if `secret` is unset. Nothing is signed
+# at build time, so a dummy is safe - and this ENV lives in the builder stage
+# only, never the web/bot runtime images (real secret enforced at boot by
+# instrumentation.ts via getEnv()).
+ENV BETTER_AUTH_SECRET=build-time-placeholder-secret-not-used-at-runtime
 RUN bun run build
 
 # ── Media/bot toolchain (static upstream builds) ───────────────────────────────

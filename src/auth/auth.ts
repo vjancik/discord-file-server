@@ -19,8 +19,10 @@ const isE2ETestAuth = process.env.E2E_TEST_AUTH === "1";
 // enforced at boot by instrumentation.ts via getEnv().
 export const auth = betterAuth({
   baseURL:
-    process.env.BASE_URL ??
-    (process.env.DOMAIN ? `https://${process.env.DOMAIN}` : undefined),
+    process.env.BASE_URL ||
+    (process.env.DOMAIN
+      ? `https://${process.env.DOMAIN}`
+      : "http://localhost:3000"),
   secret: process.env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(getDb(), {
     provider: "sqlite",
