@@ -38,11 +38,6 @@ async function main(): Promise<void> {
     client,
   );
 
-  // The image pins a yt-dlp release that goes stale fast (site fixes ship
-  // almost daily). Refresh it on every container start so a long-lived image
-  // still downloads reliably; best-effort, never blocks boot on failure.
-  if (embed) void ytdlp.update();
-
   await waitForMigrations(db);
   await registerCommands(env, { embedVideo: embed !== undefined });
   embed?.sweepScratch();
@@ -60,6 +55,14 @@ async function main(): Promise<void> {
     log.info({ user: ready.user.tag }, "connected to Discord gateway");
   });
   await client.login(env.DISCORD_BOT_TOKEN);
+
+  // The image pins a yt-dlp release that goes stale fast (site fixes ship
+  // almost daily). Refresh it on every container start so a long-lived image
+  // still downloads reliably; best-effort, never blocks boot on failure.
+  // Only after the boot steps that can throw: a failed boot exits PID 1, which
+  // SIGKILLs a running yt-dlp and leaks its /tmp/_MEI* extraction — under
+  // `restart: unless-stopped` that repeats on every crash-loop iteration.
+  if (embed) void ytdlp.update();
 
   // Recursive timeout (not setInterval) so ticks never overlap, however slow
   // Discord or the DB gets.
@@ -79,6 +82,9 @@ async function main(): Promise<void> {
     log.info({ signal }, "shutting down");
     stopped = true;
     clearTimeout(timer);
+    // Before exiting PID 1: let yt-dlp clean up its /tmp extraction, and keep
+    // the client up so in-flight jobs can post their "stopped" reply.
+    await ytdlp.stopAll();
     await client.destroy();
     process.exit(0);
   };

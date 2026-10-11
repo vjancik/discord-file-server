@@ -47,6 +47,30 @@ export type DownloadRequest = {
 
 const PROGRESS_PREFIX = "EMBEDPROG";
 const FILEPATH_SIDECAR = ".final-filepath";
+/** SIGTERM → SIGKILL escalation; stays under Docker's 10s stop timeout. */
+const KILL_GRACE_MS = 5_000;
+
+function signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+  try {
+    if (child.pid) process.kill(-child.pid, signal);
+  } catch (err) {
+    log.warn({ err, signal }, "failed to signal yt-dlp process group");
+    child.kill(signal);
+  }
+}
+
+/**
+ * SIGTERM first: the yt-dlp release is a PyInstaller onefile build whose
+ * bootloader forwards it to Python, then deletes its /tmp/_MEI* extraction
+ * (a whole Python runtime). SIGKILL skips that cleanup and leaks it, so it is
+ * only the fallback for a process group that won't exit.
+ */
+function terminate(child: ChildProcess): void {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  signalGroup(child, "SIGTERM");
+  const timer = setTimeout(() => signalGroup(child, "SIGKILL"), KILL_GRACE_MS);
+  child.once("close", () => clearTimeout(timer));
+}
 
 /** Outcome of a `yt-dlp --update` run. */
 export type UpdateResult =
@@ -76,7 +100,25 @@ const num = (s: string | undefined): number | undefined => {
  * (docs/embed-video.md "envelope changes are fine, full re-encodes aren't").
  */
 export class YtDlp {
+  /** Live processes, so shutdown can stop them and wait for their cleanup. */
+  private readonly running = new Set<{
+    stop(reason: string): void;
+    closed: Promise<void>;
+  }>();
+  private stopped = false;
+
   constructor(private readonly binary = "yt-dlp") {}
+
+  /**
+   * Shutdown: refuse new spawns, terminate live ones and wait until they exit.
+   * Exiting the bot (PID 1) first would SIGKILL them and leak their /tmp
+   * extraction.
+   */
+  async stopAll(): Promise<void> {
+    this.stopped = true;
+    for (const proc of this.running) proc.stop("the bot is restarting.");
+    await Promise.all([...this.running].map((proc) => proc.closed));
+  }
 
   async probe(url: string): Promise<ProbeInfo> {
     const { stdout, stderr, code } = await this.run(
@@ -222,7 +264,7 @@ export class YtDlp {
   }
 
   /**
-   * Spawns yt-dlp in its own process group so a watchdog kill also takes out
+   * Spawns yt-dlp in its own process group so a watchdog stop also takes out
    * ffmpeg children. `onStdoutLine` may return a reason string to abort.
    */
   private run(
@@ -238,6 +280,10 @@ export class YtDlp {
     aborted?: string;
   }> {
     return new Promise((resolve, reject) => {
+      if (this.stopped) {
+        reject(new Error("yt-dlp is shutting down"));
+        return;
+      }
       let child: ChildProcess;
       try {
         child = spawn(this.binary, args, {
@@ -256,12 +302,20 @@ export class YtDlp {
       const kill = (reason: string) => {
         if (aborted) return;
         aborted = reason;
-        try {
-          if (child.pid) process.kill(-child.pid, "SIGKILL");
-        } catch (err) {
-          log.warn({ err }, "failed to kill yt-dlp process group");
-          child.kill("SIGKILL");
-        }
+        terminate(child);
+      };
+
+      let settle!: () => void;
+      const proc = {
+        stop: kill,
+        closed: new Promise<void>((r) => {
+          settle = r;
+        }),
+      };
+      this.running.add(proc);
+      const done = () => {
+        this.running.delete(proc);
+        settle();
       };
 
       child.stdout?.on("data", (chunk: Buffer) => {
@@ -288,8 +342,12 @@ export class YtDlp {
         else opts.signal.addEventListener("abort", onAbort, { once: true });
       }
 
-      child.on("error", reject);
+      child.on("error", (err) => {
+        done();
+        reject(err);
+      });
       child.on("close", (code) => {
+        done();
         resolve({ stdout, stderr, code: code ?? -1, aborted });
       });
     });
