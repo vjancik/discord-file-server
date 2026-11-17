@@ -55,7 +55,16 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "443:443/udp" # HTTP/3
+      - "443:443/udp" # HTTP/3 (unused if the Caddyfile is switched to h1/h2 only)
+    # Optional throughput tuning (off by default): BBR for Caddy's
+    # client-facing TCP connections, paired with the commented-out
+    # `protocols h1 h2` option in the Caddyfile. Congestion control is per
+    # network namespace, so the container's value is what counts, not the
+    # host's. The host MUST have the tcp_bbr module loaded first (containers
+    # can't load kernel modules), or this container fails to start. Host setup
+    # and the BBR+h2 vs CUBIC+h3 rationale: docs/file-server-throughput.md.
+    # sysctls:
+    #   net.ipv4.tcp_congestion_control: bbr
     environment:
       DOMAIN: ${DOMAIN}
     volumes:

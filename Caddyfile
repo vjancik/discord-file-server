@@ -1,3 +1,16 @@
+# Optional throughput tuning (off by default). If large media (4K video)
+# buffers on long or lossy routes, uncomment to serve TCP only (HTTP/1.1 +
+# HTTP/2) so client connections use the kernel's BBR congestion control (also
+# uncomment the caddy sysctls in docker-compose.yml). QUIC / HTTP/3 runs its
+# own loss-based CUBIC-style controller in user space, which BBR can't affect.
+# Applies to the whole listener, app routes included. Global options must come
+# before any site block. See docs/file-server-throughput.md.
+# {
+# 	servers {
+# 		protocols h1 h2
+# 	}
+# }
+
 # Data plane (PRD §3): Caddy terminates TLS for {$DOMAIN} and serves file
 # bytes for /f/* straight from disk — Range requests, ETags, conditional GETs.
 # Everything else is reverse-proxied to the Next.js app.
