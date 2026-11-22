@@ -105,6 +105,7 @@ beforeEach(() => {
         return { filePath };
       },
     },
+    sizes: { resolve: async (info) => info },
     verifier: { verify: async () => check },
     upload: async (opts) => {
       uploads.push(opts);
@@ -319,6 +320,46 @@ describe("EmbedService flow", () => {
     expect(ui.asks).toHaveLength(1); // only the pre-download choice
     expect(uploads).toHaveLength(1);
     expect(ui.finished).toBe("https://files.test/s/a");
+  });
+
+  test("sizes resolved after the probe skip the unknown-size prompt", async () => {
+    // Instagram-shaped: no duration, no sizes — only direct URLs.
+    probeInfo = {
+      title: "reel",
+      formats: [
+        {
+          format_id: "a",
+          ext: "m4a",
+          vcodec: "none",
+          acodec: "mp4a",
+          protocol: "https",
+          url: "https://cdn.test/a.m4a",
+        },
+        {
+          format_id: "v",
+          ext: "mp4",
+          vcodec: "vp9",
+          acodec: "none",
+          height: 1920,
+          width: 1080,
+          protocol: "https",
+          url: "https://cdn.test/v.mp4",
+        },
+      ],
+    };
+    const sizes: Record<string, number> = { a: 1 * MB, v: 30 * MB };
+    deps.sizes = {
+      resolve: async (info) => ({
+        ...info,
+        formats: info.formats?.map((f) => ({
+          ...f,
+          filesize: sizes[f.format_id],
+        })),
+      }),
+    };
+    await service().enqueue("https://x.test/reel", INVOKER, ui);
+    expect(ui.asks).toHaveLength(0); // 31 MB exact fits the 500 MB limit
+    expect(downloads[0].formatIds).toEqual(["v", "a"]);
   });
 
   test("unknown-size route re-confirms when it comes out over the limit", async () => {

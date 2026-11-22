@@ -7,6 +7,7 @@ import { FileStorage } from "@/server/files/storage";
 import { QuotaService } from "@/server/quota/quota.service";
 import { mintServiceToken } from "@/server/uploads/service-token";
 import { EmbedService } from "./embed/embed.service";
+import { HttpSizeResolver } from "./embed/size-resolver";
 import { tusUpload } from "./embed/tus-client";
 import { EmbedVerifier } from "./embed/verify";
 import { YtDlp } from "./embed/ytdlp";
@@ -68,6 +69,7 @@ function createEmbedService(
   return new EmbedService(
     {
       ytdlp,
+      sizes: new HttpSizeResolver(),
       verifier: new EmbedVerifier(),
       upload: (opts) => tusUpload({ ...opts, endpoint }),
       sources: new EmbedSourceRepository(db),

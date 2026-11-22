@@ -18,6 +18,7 @@ import {
   pickThumbnail,
   planEmbed,
 } from "./selection";
+import type { SizeResolver } from "./size-resolver";
 import {
   TusUploadError,
   type TusUploadResult,
@@ -68,6 +69,8 @@ export type EmbedServiceDeps = {
     probe(url: string): Promise<ProbeInfo>;
     download(req: DownloadRequest): Promise<{ filePath: string }>;
   };
+  /** Exact sizes for unsized direct-URL formats; best-effort, never throws. */
+  sizes: SizeResolver;
   verifier: { verify(filePath: string, limit: number): Promise<EmbedCheck> };
   upload: UploadFn;
   /** Persists source title/description/URL for the /s card and /v watch page. */
@@ -213,6 +216,8 @@ export class EmbedService {
       if (err instanceof YtDlpError) return ui.finish(err.userMessage);
       throw err;
     }
+    info = await this.deps.sizes.resolve(info, signal);
+    if (signal?.aborted) return ui.finish("Cancelled.");
     const title = scrub(info.title ?? "video");
     const plan = planEmbed(info, this.opts.embedLimit);
     if (plan.kind === "reject") return ui.finish(plan.reason);

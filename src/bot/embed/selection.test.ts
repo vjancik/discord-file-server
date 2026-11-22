@@ -142,6 +142,76 @@ describe("buildCandidates", () => {
     expect(candidates[1].label).toContain("(rough)");
   });
 
+  test("unknown sizes at equal height rank by tbr, not listing order (Instagram-style)", () => {
+    const dash = (id: string, height: number, tbr: number) => ({
+      format_id: id,
+      ext: "mp4",
+      vcodec: "avc1",
+      acodec: "none",
+      height,
+      tbr,
+      filesize: null,
+      filesize_approx: null,
+    });
+    const info: ProbeInfo = {
+      duration: null,
+      formats: [
+        {
+          format_id: "audio-lo",
+          ext: "m4a",
+          vcodec: "none",
+          acodec: "mp4a",
+          tbr: 64,
+        },
+        {
+          format_id: "audio-hi",
+          ext: "m4a",
+          vcodec: "none",
+          acodec: "mp4a",
+          tbr: 128,
+        },
+        dash("v-1080-lo", 1920, 2146),
+        dash("v-1080-hi", 1920, 3276),
+        dash("v-720-lo", 1280, 169),
+        dash("v-720-hi", 1280, 900),
+      ],
+    };
+    const ids = buildCandidates(info).map((c) => c.formatIds);
+    expect(ids).toEqual([
+      ["v-1080-hi", "audio-hi"],
+      ["v-1080-lo", "audio-hi"],
+      ["v-720-hi", "audio-hi"],
+      ["v-720-lo", "audio-hi"],
+    ]);
+    expect(planEmbed(info, 10 * MB).kind).toBe("unknown");
+  });
+
+  test("labels portrait video by its short side", () => {
+    const info: ProbeInfo = {
+      duration: 10,
+      formats: [
+        {
+          format_id: "p",
+          ext: "mp4",
+          height: 1920,
+          width: 1080,
+          filesize: 10 * MB,
+        },
+        {
+          format_id: "l",
+          ext: "mp4",
+          height: 720,
+          width: 1280,
+          filesize: 5 * MB,
+        },
+      ],
+    };
+    const [portrait, landscape] = buildCandidates(info);
+    expect(portrait.label).toStartWith("1080p ·");
+    expect(portrait.height).toBe(1920); // ranking still uses the raw height
+    expect(landscape.label).toStartWith("720p ·");
+  });
+
   test("excludes non-embeddable containers like mkv/flv", () => {
     const info: ProbeInfo = {
       duration: 10,

@@ -14,11 +14,16 @@ export type ProbeFormat = {
   vcodec?: string | null;
   acodec?: string | null;
   height?: number | null;
+  width?: number | null;
   filesize?: number | null;
   filesize_approx?: number | null;
   /** Total bitrate in kbit/s; peak (not average) for manifest formats. */
   tbr?: number | null;
   protocol?: string | null;
+  /** Direct media URL (for http/https protocols) — used for size lookups. */
+  url?: string | null;
+  /** Headers yt-dlp itself would send when fetching `url`. */
+  http_headers?: Record<string, string> | null;
 };
 
 /** Subset of the yt-dlp `-J` top-level info we consume. */
@@ -64,8 +69,14 @@ export type Candidate = {
   formatIds: string[];
   /** Merge container passed to yt-dlp; null for single complete formats. */
   mergeFormat: "mp4" | "webm" | null;
+  /** Raw frame height; ranking key (orientation is shared within a source). */
   height: number;
   estimate: SizeEstimate;
+  /**
+   * Summed total bitrate (kbit/s) of the chosen formats; 0 when unreported.
+   * Last-resort quality signal when sizes are unknown (no duration).
+   */
+  tbr: number;
   /** e.g. "720p · ~340 MB" or "1080p · size unknown" */
   label: string;
 };
@@ -94,6 +105,9 @@ function sizeOf(fmt: ProbeFormat, duration: number | null): SizeEstimate {
   return { confidence: "unknown" };
 }
 
+const tbrOf = (f: ProbeFormat): number =>
+  typeof f.tbr === "number" && f.tbr > 0 ? f.tbr : 0;
+
 const worse = (a: SizeConfidence, b: SizeConfidence): SizeConfidence => {
   const order: SizeConfidence[] = ["exact", "approx", "rough"];
   return order[Math.max(order.indexOf(a), order.indexOf(b))];
@@ -116,6 +130,10 @@ export function fitsLimit(estimate: SizeEstimate, limit: number): boolean {
 }
 
 const isAudioOnly = (f: ProbeFormat) => f.vcodec === "none";
+
+/** Formats selection can ever pick: embeddable containers, or audio to pair. */
+export const isEmbedRelevant = (f: ProbeFormat) =>
+  !f.ext || EMBED_CONTAINERS.has(f.ext) || isAudioOnly(f);
 const hasVideo = (f: ProbeFormat) =>
   f.vcodec != null ? f.vcodec !== "none" : true;
 /**
@@ -134,8 +152,19 @@ function audioFamily(videoExt: string | null | undefined): string[] {
   return videoExt === "webm" ? ["webm"] : ["m4a", "mp4"];
 }
 
-function label(height: number, estimate: SizeEstimate): string {
-  const res = height > 0 ? `${height}p` : "audio/video";
+/**
+ * "1080p" means the short side: portrait video reports height as its long
+ * side (1080×1920 → height 1920), which viewers still call 1080p.
+ */
+function resolutionOf(f: ProbeFormat): number {
+  const h = f.height ?? 0;
+  const w = f.width ?? 0;
+  return h > 0 && w > 0 ? Math.min(h, w) : h;
+}
+
+function label(f: ProbeFormat, estimate: SizeEstimate): string {
+  const p = resolutionOf(f);
+  const res = p > 0 ? `${p}p` : "audio/video";
   if (estimate.confidence === "unknown") return `${res} · size unknown`;
   const approx = estimate.confidence === "exact" ? "" : "~";
   const rough = estimate.confidence === "rough" ? " (rough)" : "";
@@ -145,13 +174,11 @@ function label(height: number, estimate: SizeEstimate): string {
 /**
  * All viable candidates, best first. Sort: height desc, then known size
  * before unknown (prefer the sized sibling at equal quality), then larger
- * estimated size (higher bitrate) first.
+ * estimated size, then higher reported bitrate (tbr) first.
  */
 export function buildCandidates(info: ProbeInfo): Candidate[] {
   const duration = info.duration ?? null;
-  const formats = (info.formats ?? []).filter(
-    (f) => !f.ext || EMBED_CONTAINERS.has(f.ext) || isAudioOnly(f),
-  );
+  const formats = (info.formats ?? []).filter(isEmbedRelevant);
 
   const completes = formats.filter(
     (f) => isComplete(f) && (!f.ext || f.ext === "mp4" || f.ext === "webm"),
@@ -168,7 +195,8 @@ export function buildCandidates(info: ProbeInfo): Candidate[] {
         const s = sizeOf(f, duration);
         return s.confidence === "unknown" ? -1 : s.bytes;
       };
-      return bytes(a) > bytes(best) ? a : best;
+      if (bytes(a) !== bytes(best)) return bytes(a) > bytes(best) ? a : best;
+      return tbrOf(a) > tbrOf(best) ? a : best;
     }, undefined);
   };
 
@@ -180,7 +208,8 @@ export function buildCandidates(info: ProbeInfo): Candidate[] {
       mergeFormat: null,
       height: f.height ?? 0,
       estimate,
-      label: label(f.height ?? 0, estimate),
+      tbr: tbrOf(f),
+      label: label(f, estimate),
     });
   }
   for (const v of videos) {
@@ -192,7 +221,8 @@ export function buildCandidates(info: ProbeInfo): Candidate[] {
       mergeFormat: v.ext === "webm" ? "webm" : "mp4",
       height: v.height ?? 0,
       estimate,
-      label: label(v.height ?? 0, estimate),
+      tbr: tbrOf(v) + tbrOf(audio),
+      label: label(v, estimate),
     });
   }
 
@@ -203,7 +233,10 @@ export function buildCandidates(info: ProbeInfo): Candidate[] {
       return rank[b.estimate.confidence] - rank[a.estimate.confidence];
     const bytes = (c: Candidate) =>
       c.estimate.confidence === "unknown" ? 0 : c.estimate.bytes;
-    return bytes(b) - bytes(a);
+    if (bytes(a) !== bytes(b)) return bytes(b) - bytes(a);
+    // Unknown sizes (e.g. Instagram: no filesize, no duration) all tie at 0 —
+    // fall back to bitrate instead of the extractor's listing order.
+    return b.tbr - a.tbr;
   });
 }
 

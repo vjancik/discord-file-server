@@ -74,6 +74,21 @@ Per-format size confidence tiers (validated against real sources 2026-07):
    Shown to users as "~N MB (rough)".
 4. **unknown** — nothing available.
 
+**Size lookups** (`size-resolver.ts`): right after the probe, formats that
+are still unsized *and* have a direct `http`/`https` URL (not a manifest) get
+a `HEAD` with yt-dlp's own `http_headers`, falling back to a 1-byte
+`Range: bytes=0-0` GET (total from `Content-Range`). The result is stored as
+`filesize`, so it ranks as **exact**. Motivating case: Instagram reels expose no
+filesize, no filesize_approx and no duration, but every DASH representation is
+a plain https file. Smoke-tested 2026-11: Bun `fetch` and impit (all browser
+profiles) returned identical, byte-accurate lengths, so plain `fetch` is used.
+Best-effort: 5 s budget per probe, 4 at a time, ≤32 lookups; failures stay
+unknown.
+
+Labels use the frame's **short side** (`min(width, height)`), so portrait
+1080×1920 reads "1080p". Ranking still uses raw height, which is consistent
+within one source.
+
 Classification is **per-format, not per-URL**: sources often mix sized and
 unsized formats at the same resolution (Vimeo exposes sizeless HLS *and*
 exact-size progressive mp4s) — prefer the sized sibling at equal quality.
